@@ -56,6 +56,20 @@ const loginAdmin = async (req, res, next) => {
   }
 };
 
+// GET /api/auth/me
+const getCurrentAdmin = (req, res) => {
+  return res.status(200).json({
+    success: true,
+    admin: {
+      id: req.admin._id,
+      name: req.admin.name,
+      email: req.admin.email,
+      role: req.admin.role,
+      lastLoginAt: req.admin.lastLoginAt,
+    },
+  });
+};
+
 // POST /api/auth/logout
 const logoutAdmin = (req, res) => {
   res.clearCookie("admin_token", {
@@ -72,5 +86,6 @@ const logoutAdmin = (req, res) => {
 
 module.exports = {
   loginAdmin,
+  getCurrentAdmin,
   logoutAdmin,
 };
