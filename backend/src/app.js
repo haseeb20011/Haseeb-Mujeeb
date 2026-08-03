@@ -5,15 +5,14 @@ const morgan = require("morgan");
 const cookieParser = require("cookie-parser");
 const { rateLimit } = require("express-rate-limit");
 
+const authRoutes = require("./routes/authRoutes");
+
 const app = express();
 
-// Remove the Express identification header
 app.disable("x-powered-by");
 
-// Security headers
 app.use(helmet());
 
-// Allow the frontend to communicate with the backend
 app.use(
   cors({
     origin: process.env.CLIENT_URL || "http://localhost:5173",
@@ -21,8 +20,8 @@ app.use(
   })
 );
 
-// Parse incoming JSON and form data
 app.use(express.json({ limit: "10mb" }));
+
 app.use(
   express.urlencoded({
     extended: true,
@@ -30,13 +29,10 @@ app.use(
   })
 );
 
-// Parse cookies
 app.use(cookieParser());
 
-// Request logging
 app.use(morgan(process.env.NODE_ENV === "production" ? "combined" : "dev"));
 
-// Protect the API from excessive requests
 const apiLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   limit: 200,
@@ -49,6 +45,9 @@ const apiLimiter = rateLimit({
 });
 
 app.use("/api", apiLimiter);
+
+// Authentication routes
+app.use("/api/auth", authRoutes);
 
 // Health-check route
 app.get("/api/health", (req, res) => {
