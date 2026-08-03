@@ -1,35 +1,49 @@
 require("dotenv").config();
 
+const mongoose = require("mongoose");
 const app = require("./app");
+const connectDatabase = require("./config/database");
 
 const PORT = Number(process.env.PORT) || 5000;
 
-const server = app.listen(PORT, () => {
-  console.log("---------------------------------------");
-  console.log(`Portfolio CMS API running on port ${PORT}`);
-  console.log(`Health check: http://localhost:${PORT}/api/health`);
-  console.log(`Environment: ${process.env.NODE_ENV || "development"}`);
-  console.log("---------------------------------------");
-});
+let server;
 
-// Graceful shutdown
-const shutdownServer = (signal) => {
-  console.log(`\n${signal} received. Closing the server...`);
+const startServer = async () => {
+  try {
+    await connectDatabase();
 
-  server.close(() => {
-    console.log("Server closed successfully.");
+    server = app.listen(PORT, () => {
+      console.log("---------------------------------------");
+      console.log(`Portfolio CMS API running on port ${PORT}`);
+      console.log(`Health check: http://localhost:${PORT}/api/health`);
+      console.log(`Environment: ${process.env.NODE_ENV || "development"}`);
+      console.log("---------------------------------------");
+    });
+  } catch (error) {
+    console.error("Server startup failed:", error.message);
+    process.exit(1);
+  }
+};
+
+const shutdownServer = async (signal) => {
+  console.log(`\n${signal} received. Closing the application...`);
+
+  try {
+    if (server) {
+      await new Promise((resolve) => server.close(resolve));
+    }
+
+    await mongoose.connection.close();
+
+    console.log("Server and database connection closed.");
     process.exit(0);
-  });
+  } catch (error) {
+    console.error("Shutdown failed:", error.message);
+    process.exit(1);
+  }
 };
 
 process.on("SIGINT", () => shutdownServer("SIGINT"));
 process.on("SIGTERM", () => shutdownServer("SIGTERM"));
 
-// Handle rejected promises
-process.on("unhandledRejection", (error) => {
-  console.error("Unhandled promise rejection:", error);
-
-  server.close(() => {
-    process.exit(1);
-  });
-});
+startServer();
