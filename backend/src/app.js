@@ -13,10 +13,41 @@ app.disable("x-powered-by");
 
 app.use(helmet());
 
+const isAllowedOrigin = (origin) => {
+  // Allow PowerShell, Postman, server-to-server requests, etc.
+  if (!origin) {
+    return true;
+  }
+
+  // Allow the frontend URL configured in backend/.env.
+  if (origin === process.env.CLIENT_URL) {
+    return true;
+  }
+
+  // Allow localhost and 127.0.0.1 on any port during development.
+  if (
+    process.env.NODE_ENV !== "production" &&
+    /^http:\/\/(localhost|127\.0\.0\.1):\d+$/.test(origin)
+  ) {
+    return true;
+  }
+
+  return false;
+};
+
 app.use(
   cors({
-    origin: process.env.CLIENT_URL || "http://localhost:5173",
+    origin(origin, callback) {
+      if (isAllowedOrigin(origin)) {
+        callback(null, true);
+        return;
+      }
+
+      callback(new Error(`CORS blocked origin: ${origin}`));
+    },
     credentials: true,
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization"],
   })
 );
 
@@ -31,7 +62,13 @@ app.use(
 
 app.use(cookieParser());
 
-app.use(morgan(process.env.NODE_ENV === "production" ? "combined" : "dev"));
+app.use(
+  morgan(
+    process.env.NODE_ENV === "production"
+      ? "combined"
+      : "dev"
+  )
+);
 
 const apiLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -71,7 +108,10 @@ app.use((req, res) => {
 app.use((error, req, res, next) => {
   console.error(error);
 
-  const statusCode = error.statusCode || error.status || 500;
+  const statusCode =
+    error.statusCode ||
+    error.status ||
+    (error.message?.startsWith("CORS blocked") ? 403 : 500);
 
   res.status(statusCode).json({
     success: false,
