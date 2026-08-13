@@ -205,7 +205,6 @@ const getProjects = async (req, res, next) => {
 
 const createProject = async (req, res, next) => {
   try {
-    const previousStatus = project.status;
     const payload = projectPayload(req.body);
 
     if (!payload.title || !payload.slug) {
@@ -270,6 +269,7 @@ const updateProject = async (req, res, next) => {
       });
     }
 
+    const previousStatus = project.status;
     const payload = projectPayload(req.body);
 
     if (!payload.title || !payload.slug) {
@@ -510,6 +510,9 @@ const syncDefaultProjects = async (req, res, next) => {
       });
     }
 
+    let createdCount = 0;
+    let updatedCount = 0;
+
     const fillWhenEmpty = [
       "code",
       "projectType",
@@ -573,6 +576,7 @@ const syncDefaultProjects = async (req, res, next) => {
           createdBy: req.admin._id,
         });
 
+        createdCount += 1;
         continue;
       }
 
@@ -648,7 +652,10 @@ const syncDefaultProjects = async (req, res, next) => {
         }
       }
 
-      await existingProject.save();
+      if (existingProject.isModified()) {
+        await existingProject.save();
+        updatedCount += 1;
+      }
     }
 
     const projects = await Project.find()
@@ -659,24 +666,18 @@ const syncDefaultProjects = async (req, res, next) => {
       .select("+migrationVersion")
       .lean();
 
-    await logActivity({
-      type: "project",
-      action: "updated",
-      title: "Synchronized project defaults",
-      description:
-        "Project records and case-study defaults were synchronized.",
-      entityType: "Project",
-      metadata: {
-        projectCount: projects.length,
-      },
-      admin: req.admin,
-    });
-
     res.status(200).json({
       success: true,
       message:
-        "Project records and case-study defaults are synchronized.",
+        createdCount + updatedCount > 0
+          ? "Project records and case-study defaults were synchronized."
+          : "Project records are already synchronized.",
       count: projects.length,
+      sync: {
+        created: createdCount,
+        updated: updatedCount,
+        changed: createdCount + updatedCount,
+      },
       projects: serializeLeanProjects(projects),
     });
   } catch (error) {

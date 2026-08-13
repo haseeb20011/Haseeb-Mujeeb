@@ -6,6 +6,12 @@ const Activity = require("../models/Activity");
 |--------------------------------------------------------------------------
 */
 
+const LEGACY_NOISE_FILTER = {
+  title: {
+    $ne: "Synchronized project defaults",
+  },
+};
+
 const serializeActivity = (activity) => {
   const item =
     typeof activity.toObject === "function"
@@ -14,42 +20,27 @@ const serializeActivity = (activity) => {
 
   return {
     id: String(item._id),
-
     type: item.type || "system",
-
     action: item.action || "updated",
-
     title: item.title || "",
-
     description: item.description || "",
-
     entityId: item.entityId || "",
-
     entityType: item.entityType || "",
-
     metadata:
       item.metadata &&
       typeof item.metadata === "object"
         ? item.metadata
         : {},
-
     admin: item.admin
       ? {
-          id:
-            item.admin._id
-              ? String(item.admin._id)
-              : String(item.admin),
-
-          name:
-            item.admin.name || "",
-
-          email:
-            item.admin.email || "",
+          id: item.admin._id
+            ? String(item.admin._id)
+            : String(item.admin),
+          name: item.admin.name || "",
+          email: item.admin.email || "",
         }
       : null,
-
     createdAt: item.createdAt || null,
-
     updatedAt: item.updatedAt || null,
   };
 };
@@ -59,36 +50,20 @@ const serializeActivity = (activity) => {
 | GET /api/activity
 |--------------------------------------------------------------------------
 |
-| Get recent real CMS activity.
-|
-| Examples:
-| /api/activity
-| /api/activity?limit=10
-| /api/activity?type=project
+| Returns meaningful CMS activity only.
+| Legacy automatic project-default sync records are intentionally excluded.
 |
 */
 
-const getActivities = async (
-  req,
-  res,
-  next
-) => {
+const getActivities = async (req, res, next) => {
   try {
     const requestedLimit =
-      Number.parseInt(
-        req.query.limit,
-        10
-      ) || 10;
+      Number.parseInt(req.query.limit, 10) || 10;
 
     const limit = Math.min(
-      Math.max(
-        requestedLimit,
-        1
-      ),
+      Math.max(requestedLimit, 1),
       100
     );
-
-    const filter = {};
 
     const allowedTypes = [
       "project",
@@ -102,44 +77,33 @@ const getActivities = async (
       "system",
     ];
 
+    const filter = {
+      ...LEGACY_NOISE_FILTER,
+    };
+
     if (
       req.query.type &&
-      allowedTypes.includes(
-        req.query.type
-      )
+      allowedTypes.includes(req.query.type)
     ) {
-      filter.type =
-        req.query.type;
+      filter.type = req.query.type;
     }
 
-    const activities =
-      await Activity.find(filter)
-        .populate(
-          "admin",
-          "name email"
-        )
-        .sort({
-          createdAt: -1,
-        })
-        .limit(limit);
+    const [activities, total] =
+      await Promise.all([
+        Activity.find(filter)
+          .populate("admin", "name email")
+          .sort({ createdAt: -1 })
+          .limit(limit),
 
-    const total =
-      await Activity.countDocuments(
-        filter
-      );
+        Activity.countDocuments(filter),
+      ]);
 
     res.status(200).json({
       success: true,
-
-      count:
-        activities.length,
-
+      count: activities.length,
       total,
-
       activities:
-        activities.map(
-          serializeActivity
-        ),
+        activities.map(serializeActivity),
     });
   } catch (error) {
     next(error);
@@ -150,9 +114,6 @@ const getActivities = async (
 |--------------------------------------------------------------------------
 | GET /api/activity/summary
 |--------------------------------------------------------------------------
-|
-| Small summary for the dashboard.
-|
 */
 
 const getActivitySummary = async (
@@ -161,6 +122,10 @@ const getActivitySummary = async (
   next
 ) => {
   try {
+    const meaningfulFilter = {
+      ...LEGACY_NOISE_FILTER,
+    };
+
     const [
       total,
       projectCount,
@@ -168,28 +133,33 @@ const getActivitySummary = async (
       pageCount,
       mediaCount,
     ] = await Promise.all([
-      Activity.countDocuments(),
+      Activity.countDocuments(
+        meaningfulFilter
+      ),
 
       Activity.countDocuments({
+        ...meaningfulFilter,
         type: "project",
       }),
 
       Activity.countDocuments({
+        ...meaningfulFilter,
         type: "message",
       }),
 
       Activity.countDocuments({
+        ...meaningfulFilter,
         type: "page",
       }),
 
       Activity.countDocuments({
+        ...meaningfulFilter,
         type: "media",
       }),
     ]);
 
     res.status(200).json({
       success: true,
-
       summary: {
         total,
         project: projectCount,
