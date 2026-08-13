@@ -2,7 +2,6 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import {
   BrowserRouter,
-  Navigate,
   Route,
   Routes,
 } from "react-router-dom";
@@ -13,16 +12,15 @@ import AdminDashboard from "./admin/AdminDashboard.jsx";
 import ProtectedAdminRoute from "./admin/ProtectedAdminRoute.jsx";
 import { applySavedSiteStyles } from "./siteStyles.js";
 
-// Apply the saved global website styles when the app loads.
+// Apply saved global website styles when the app loads.
 applySavedSiteStyles();
 
-ReactDOM.createRoot(document.getElementById("root")).render(
+ReactDOM.createRoot(
+  document.getElementById("root")
+).render(
   <React.StrictMode>
     <BrowserRouter>
       <Routes>
-        {/* Public portfolio website */}
-        <Route path="/" element={<App />} />
-
         {/* Admin login */}
         <Route
           path="/admin/login"
@@ -37,10 +35,10 @@ ReactDOM.createRoot(document.getElementById("root")).render(
           />
         </Route>
 
-        {/* Unknown URLs redirect to the website homepage */}
+        {/* Public portfolio website */}
         <Route
           path="*"
-          element={<Navigate to="/" replace />}
+          element={<App />}
         />
       </Routes>
     </BrowserRouter>

@@ -1,7 +1,6 @@
 import {
   useCallback,
   useEffect,
-  useMemo,
   useRef,
   useState,
 } from "react";
@@ -21,11 +20,13 @@ import {
 import {
   applySiteStyles,
   DEFAULT_SITE_STYLES,
-  loadSiteStyles,
-  saveSiteStyles,
+  normalizeSiteStyles,
 } from "../siteStyles.js";
 
 import "./SiteStylesManager.css";
+
+const API_URL =
+  import.meta.env.VITE_API_URL || "http://localhost:5000";
 
 const fontOptions = [
   {
@@ -112,21 +113,24 @@ function ColorField({ label, value, onChange }) {
 }
 
 export default function SiteStylesManager() {
-  const initialStyles = useMemo(
-    () => loadSiteStyles(),
-    []
-  );
-
   const iframeRef = useRef(null);
 
-  const [styles, setStyles] = useState(initialStyles);
+  const [styles, setStyles] = useState({
+    ...DEFAULT_SITE_STYLES,
+  });
+
   const [publishedStyles, setPublishedStyles] =
-    useState(initialStyles);
+    useState({
+      ...DEFAULT_SITE_STYLES,
+    });
 
   const [previewDevice, setPreviewDevice] =
     useState("desktop");
 
   const [message, setMessage] = useState("");
+  const [error, setError] = useState("");
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSaving, setIsSaving] = useState(false);
 
   const hasUnsavedChanges =
     JSON.stringify(styles) !==
@@ -144,6 +148,70 @@ export default function SiteStylesManager() {
   }, [styles]);
 
   useEffect(() => {
+    let active = true;
+
+    const loadStyles = async () => {
+      setIsLoading(true);
+      setError("");
+
+      try {
+        const response = await fetch(
+          `${API_URL}/api/site-config`,
+          {
+            method: "GET",
+            credentials: "include",
+            headers: {
+              Accept: "application/json",
+            },
+          }
+        );
+
+        const result = await response
+          .json()
+          .catch(() => ({}));
+
+        if (!response.ok || !result.success) {
+          throw new Error(
+            result.message ||
+              "Unable to load site styles."
+          );
+        }
+
+        if (!active) {
+          return;
+        }
+
+        const savedStyles = normalizeSiteStyles(
+          result.config?.siteStyles || {}
+        );
+
+        setStyles(savedStyles);
+        setPublishedStyles(savedStyles);
+      } catch (loadError) {
+        if (!active) {
+          return;
+        }
+
+        setError(
+          loadError instanceof Error
+            ? loadError.message
+            : "Unable to load site styles."
+        );
+      } finally {
+        if (active) {
+          setIsLoading(false);
+        }
+      }
+    };
+
+    loadStyles();
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
     applyPreviewStyles();
   }, [applyPreviewStyles]);
 
@@ -154,16 +222,67 @@ export default function SiteStylesManager() {
     }));
 
     setMessage("");
+    setError("");
   };
 
-  const handlePublish = () => {
-    const savedStyles = saveSiteStyles(styles);
+  const handlePublish = async () => {
+    if (isSaving || !hasUnsavedChanges) {
+      return;
+    }
 
-    setStyles(savedStyles);
-    setPublishedStyles(savedStyles);
-    setMessage(
-      "Styles published successfully."
-    );
+    setIsSaving(true);
+    setMessage("");
+    setError("");
+
+    try {
+      const normalizedStyles =
+        normalizeSiteStyles(styles);
+
+      const response = await fetch(
+        `${API_URL}/api/site-config/styles`,
+        {
+          method: "PUT",
+          credentials: "include",
+          headers: {
+            "Content-Type": "application/json",
+            Accept: "application/json",
+          },
+          body: JSON.stringify({
+            siteStyles: normalizedStyles,
+          }),
+        }
+      );
+
+      const result = await response
+        .json()
+        .catch(() => ({}));
+
+      if (!response.ok || !result.success) {
+        throw new Error(
+          result.message ||
+            "Unable to publish site styles."
+        );
+      }
+
+      const savedStyles = normalizeSiteStyles(
+        result.siteStyles || normalizedStyles
+      );
+
+      setStyles(savedStyles);
+      setPublishedStyles(savedStyles);
+
+      setMessage(
+        "Styles published successfully and saved to MongoDB."
+      );
+    } catch (saveError) {
+      setError(
+        saveError instanceof Error
+          ? saveError.message
+          : "Unable to publish site styles."
+      );
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const handleDiscardChanges = () => {
@@ -171,6 +290,7 @@ export default function SiteStylesManager() {
       ...publishedStyles,
     });
 
+    setError("");
     setMessage(
       "Unpublished changes were discarded."
     );
@@ -189,6 +309,7 @@ export default function SiteStylesManager() {
       ...DEFAULT_SITE_STYLES,
     });
 
+    setError("");
     setMessage(
       "Original design loaded in preview. Click Publish Styles to save it."
     );
@@ -215,7 +336,11 @@ export default function SiteStylesManager() {
             type="button"
             className="site-styles__reset"
             onClick={handleDiscardChanges}
-            disabled={!hasUnsavedChanges}
+            disabled={
+              isLoading ||
+              isSaving ||
+              !hasUnsavedChanges
+            }
           >
             <RotateCcw size={16} />
             Discard Changes
@@ -225,13 +350,31 @@ export default function SiteStylesManager() {
             type="button"
             className="site-styles__save"
             onClick={handlePublish}
-            disabled={!hasUnsavedChanges}
+            disabled={
+              isLoading ||
+              isSaving ||
+              !hasUnsavedChanges
+            }
           >
             <Save size={16} />
-            Publish Styles
+            {isSaving
+              ? "Publishing..."
+              : "Publish Styles"}
           </button>
         </div>
       </header>
+
+      {isLoading && (
+        <div className="site-styles__message">
+          Loading saved site styles...
+        </div>
+      )}
+
+      {error && (
+        <div className="site-styles__unsaved">
+          {error}
+        </div>
+      )}
 
       {message && (
         <div className="site-styles__message">
@@ -240,7 +383,7 @@ export default function SiteStylesManager() {
         </div>
       )}
 
-      {hasUnsavedChanges && (
+      {hasUnsavedChanges && !isLoading && (
         <div className="site-styles__unsaved">
           You have unpublished style changes.
         </div>
@@ -527,6 +670,7 @@ export default function SiteStylesManager() {
             type="button"
             className="site-styles__original"
             onClick={handleRestoreOriginal}
+            disabled={isLoading || isSaving}
           >
             <RotateCcw size={15} />
             Restore Original Website Design

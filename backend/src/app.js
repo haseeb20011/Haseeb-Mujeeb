@@ -6,6 +6,13 @@ const cookieParser = require("cookie-parser");
 const { rateLimit } = require("express-rate-limit");
 
 const authRoutes = require("./routes/authRoutes");
+const projectRoutes = require("./routes/projectRoutes");
+const messageRoutes = require("./routes/messageRoutes");
+const siteConfigRoutes = require("./routes/siteConfigRoutes");
+const mediaRoutes = require("./routes/mediaRoutes");
+const activityRoutes = require("./routes/activityRoutes");
+
+const auditActivity = require("./middleware/auditActivity");
 
 const app = express();
 
@@ -14,17 +21,12 @@ app.disable("x-powered-by");
 app.use(helmet());
 
 const isAllowedOrigin = (origin) => {
-  // Allow PowerShell, Postman, server-to-server requests, etc.
-  if (!origin) {
-    return true;
-  }
+  if (!origin) return true;
 
-  // Allow the frontend URL configured in backend/.env.
   if (origin === process.env.CLIENT_URL) {
     return true;
   }
 
-  // Allow localhost and 127.0.0.1 on any port during development.
   if (
     process.env.NODE_ENV !== "production" &&
     /^http:\/\/(localhost|127\.0\.0\.1):\d+$/.test(origin)
@@ -52,14 +54,7 @@ app.use(
 );
 
 app.use(express.json({ limit: "10mb" }));
-
-app.use(
-  express.urlencoded({
-    extended: true,
-    limit: "10mb",
-  })
-);
-
+app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 app.use(cookieParser());
 
 app.use(
@@ -83,10 +78,43 @@ const apiLimiter = rateLimit({
 
 app.use("/api", apiLimiter);
 
-// Authentication routes
-app.use("/api/auth", authRoutes);
+const contactFormLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: {
+    success: false,
+    message:
+      "Too many messages were submitted. Please wait and try again.",
+  },
+});
 
-// Health-check route
+app.use("/api/auth", authRoutes);
+app.use("/api/projects", projectRoutes);
+
+app.use(
+  "/api/messages",
+  (req, res, next) => {
+    if (req.method === "POST") {
+      return contactFormLimiter(req, res, next);
+    }
+
+    return next();
+  },
+  auditActivity("message"),
+  messageRoutes
+);
+
+app.use(
+  "/api/site-config",
+  auditActivity("site-config"),
+  siteConfigRoutes
+);
+
+app.use("/api/media", mediaRoutes);
+app.use("/api/activity", activityRoutes);
+
 app.get("/api/health", (req, res) => {
   res.status(200).json({
     success: true,
@@ -96,7 +124,6 @@ app.get("/api/health", (req, res) => {
   });
 });
 
-// Handle routes that do not exist
 app.use((req, res) => {
   res.status(404).json({
     success: false,
@@ -104,7 +131,6 @@ app.use((req, res) => {
   });
 });
 
-// Global error handler
 app.use((error, req, res, next) => {
   console.error(error);
 

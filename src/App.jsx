@@ -113,7 +113,7 @@ const TECH_GROUPS = [
 
 const FILTERS = ["All", "WordPress", "Shopify", "Live", "In Development"];
 
-const PROJECTS = [
+const DEFAULT_PROJECTS = [
   {
     code: "HW",
     category: "WordPress",
@@ -355,6 +355,127 @@ const PROJECTS = [
     badgeBg: "#392FA8",
   },
 ];
+
+const API_URL =
+  import.meta.env.VITE_API_URL ||
+  (import.meta.env.PROD ? "" : "http://localhost:5000");
+
+function getProjectCode(title = "") {
+  return String(title)
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((word) => word[0])
+    .join("")
+    .toUpperCase() || "PR";
+}
+
+function getProjectDomain(liveUrl = "", fallback = "") {
+  if (!liveUrl) return fallback;
+
+  try {
+    return new URL(liveUrl).hostname.replace(/^www\./, "");
+  } catch {
+    return fallback || liveUrl;
+  }
+}
+
+function normalizePublicProject(project) {
+  const technologies = Array.isArray(project.technologies)
+    ? project.technologies
+    : [];
+
+  const storedFilters = Array.isArray(project.filters)
+    ? project.filters
+    : [];
+
+  const searchablePlatform = [
+    project.platform,
+    project.category,
+    ...technologies,
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+
+  const publicStatus =
+    project.publicStatus ||
+    (project.statusTone === "development"
+      ? "In Development"
+      : "Live");
+
+  const statusTone =
+    project.statusTone ||
+    (publicStatus.toLowerCase().includes("development")
+      ? "development"
+      : "live");
+
+  const derivedFilters = [
+    searchablePlatform.includes("wordpress")
+      ? "WordPress"
+      : null,
+    searchablePlatform.includes("shopify")
+      ? "Shopify"
+      : null,
+    statusTone === "development"
+      ? "In Development"
+      : "Live",
+  ].filter(Boolean);
+
+  const filters = Array.from(
+    new Set([...storedFilters, ...derivedFilters])
+  );
+
+  return {
+    id: String(project.id || project._id || project.slug),
+    code: project.code || getProjectCode(project.title),
+    category:
+      filters.includes("Shopify")
+        ? "Shopify"
+        : filters.includes("WordPress")
+          ? "WordPress"
+          : project.category || "Web Development",
+    filters,
+    projectType:
+      project.projectType ||
+      project.category ||
+      "Portfolio Project",
+    title: project.title || "Untitled Project",
+    domain:
+      project.domain ||
+      getProjectDomain(project.liveUrl, project.title),
+    liveUrl: project.liveUrl || "",
+    status: publicStatus,
+    statusTone,
+    role: project.role || "Design & Development",
+    platform:
+      project.platform ||
+      technologies.slice(0, 2).join(" + ") ||
+      "Web Development",
+    focus:
+      project.focus ||
+      project.highlight ||
+      "Responsive website implementation",
+    challenge: project.challenge || "",
+    solution: project.solution || "",
+    outcome: project.outcome || "",
+    desc: project.description || "",
+    highlight:
+      project.highlight ||
+      project.focus ||
+      "",
+    stack: technologies,
+    details: Array.isArray(project.details)
+      ? project.details
+      : [],
+    image: project.image || "",
+    accent: project.accent || "#8B5CF6",
+    badgeBg: project.badgeBg || "#6D28D9",
+    featured: Boolean(project.featured),
+    caseStudyEnabled:
+      project.caseStudyEnabled !== false,
+  };
+}
 
 const ACADEMIC_PROJECTS = [
   {
@@ -714,23 +835,37 @@ function ProjectCard({ project, onOpen }) {
         </div>
         <h3>{project.title}</h3>
         <p>{project.desc}</p>
-        <div className="pcard__highlight"><b>Focus</b>{project.highlight}</div>
+        {project.highlight && (
+          <div className="pcard__highlight">
+            <b>Focus</b>
+            {project.highlight}
+          </div>
+        )}
         <div className="pcard__stack">
-          {project.stack.map((item) => <span key={item}>{item}</span>)}
+          {(project.stack || []).map((item) => <span key={item}>{item}</span>)}
         </div>
         <div className="pcard__actions">
-          <button type="button" className="pcard__case" onClick={() => onOpen(project)}>
-            View Case Study <ArrowRight size={14} />
-          </button>
-          <a
-            className="pcard__live"
-            href={project.liveUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            aria-label={`Open ${project.title} live website in a new tab`}
-          >
-            View Live Site <ExternalLink size={13} />
-          </a>
+          {project.caseStudyEnabled && (
+            <button
+              type="button"
+              className="pcard__case"
+              onClick={() => onOpen(project)}
+            >
+              View Case Study <ArrowRight size={14} />
+            </button>
+          )}
+
+          {project.liveUrl && (
+            <a
+              className="pcard__live"
+              href={project.liveUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              aria-label={`Open ${project.title} live website in a new tab`}
+            >
+              View Live Site <ExternalLink size={13} />
+            </a>
+          )}
         </div>
       </div>
     </article>
@@ -780,7 +915,11 @@ function ProjectCaseStudy({ project, onClose, onContact }) {
     { label: "Challenge", text: project.challenge, icon: Lightbulb, tone: "purple" },
     { label: "Solution", text: project.solution, icon: Wrench, tone: "orange" },
     { label: "Outcome", text: project.outcome, icon: CheckCircle2, tone: "green" },
-  ];
+  ].filter((item) => item.text);
+
+  const projectDetails = Array.isArray(project.details)
+    ? project.details.filter(Boolean)
+    : [];
 
   return (
     <div
@@ -847,56 +986,66 @@ function ProjectCaseStudy({ project, onClose, onContact }) {
               <div><small>Project status</small><b>{project.status}</b></div>
             </div>
 
-            <div className="project-modal__section-heading">
-              <span>Project story</span>
-              <p>How the project moved from the core requirement to a practical final experience.</p>
-            </div>
+            {storyItems.length > 0 && (
+              <>
+                <div className="project-modal__section-heading">
+                  <span>Project story</span>
+                  <p>How the project moved from the core requirement to a practical final experience.</p>
+                </div>
 
-            <div className="project-modal__story">
-              {storyItems.map((item, index) => {
-                const StoryIcon = item.icon;
-                return (
-                  <div className={`project-modal__story-item project-modal__story-item--${item.tone}`} key={item.label}>
-                    <span className="project-modal__story-number">0{index + 1}</span>
-                    <span className="project-modal__story-icon"><StoryIcon size={17} /></span>
-                    <div>
-                      <small>{item.label}</small>
-                      <p>{item.text}</p>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
+                <div className="project-modal__story">
+                  {storyItems.map((item, index) => {
+                    const StoryIcon = item.icon;
+                    return (
+                      <div className={`project-modal__story-item project-modal__story-item--${item.tone}`} key={item.label}>
+                        <span className="project-modal__story-number">0{index + 1}</span>
+                        <span className="project-modal__story-icon"><StoryIcon size={17} /></span>
+                        <div>
+                          <small>{item.label}</small>
+                          <p>{item.text}</p>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </>
+            )}
 
-            <div className="project-modal__built">
-              <div className="project-modal__section-heading project-modal__section-heading--compact">
-                <span>What I built</span>
-                <p>The main implementation and experience details included in the project.</p>
+            {projectDetails.length > 0 && (
+              <div className="project-modal__built">
+                <div className="project-modal__section-heading project-modal__section-heading--compact">
+                  <span>What I built</span>
+                  <p>The main implementation and experience details included in the project.</p>
+                </div>
+                <ul>
+                  {projectDetails.map((item) => (
+                    <li key={item}>
+                      <span className="project-modal__check"><CheckCircle2 size={16} /></span>
+                      <span>{item}</span>
+                    </li>
+                  ))}
+                </ul>
               </div>
-              <ul>
-                {project.details.map((item) => (
-                  <li key={item}>
-                    <span className="project-modal__check"><CheckCircle2 size={16} /></span>
-                    <span>{item}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
+            )}
 
-            <div className="pcard__stack project-modal__stack" aria-label="Project technologies and capabilities">
-              {project.stack.map((item) => <span key={item}>{item}</span>)}
-            </div>
+            {(project.stack || []).length > 0 && (
+              <div className="pcard__stack project-modal__stack" aria-label="Project technologies and capabilities">
+                {(project.stack || []).map((item) => <span key={item}>{item}</span>)}
+              </div>
+            )}
 
             <div className="project-modal__actions">
-              <a
-                className="btn btn-grad"
-                href={project.liveUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                aria-label={`Visit ${project.title} live website`}
-              >
-                Visit Live Site <ExternalLink size={14} />
-              </a>
+              {project.liveUrl && (
+                <a
+                  className="btn btn-grad"
+                  href={project.liveUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  aria-label={`Visit ${project.title} live website`}
+                >
+                  Visit Live Site <ExternalLink size={14} />
+                </a>
+              )}
               <button className="btn btn-outline-light" type="button" onClick={() => onContact(project)}>
                 Discuss Similar Project <ArrowRight size={14} />
               </button>
@@ -991,6 +1140,7 @@ export default function App() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [activeFilter, setActiveFilter] = useState("All");
   const [selectedProject, setSelectedProject] = useState(null);
+  const [projects, setProjects] = useState(DEFAULT_PROJECTS);
 
   const [form, setForm] = useState({
     name: "",
@@ -1004,6 +1154,48 @@ export default function App() {
   const [formError, setFormError] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [website, setWebsite] = useState("");
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadPublishedProjects = async () => {
+      try {
+        const response = await fetch(
+          `${API_URL}/api/projects/public`
+        );
+
+        const data = await response.json();
+
+        if (
+          !response.ok ||
+          data.success === false ||
+          !Array.isArray(data.projects)
+        ) {
+          throw new Error(
+            data.message ||
+              "Published projects could not be loaded."
+          );
+        }
+
+        if (!cancelled) {
+          setProjects(
+            data.projects.map(normalizePublicProject)
+          );
+        }
+      } catch (error) {
+        console.warn(
+          "Using the built-in project fallback because the public Projects API is unavailable.",
+          error
+        );
+      }
+    };
+
+    loadPublishedProjects();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 30);
@@ -1253,7 +1445,7 @@ export default function App() {
     setFormSent(false);
 
     try {
-      const response = await fetch("https://formsubmit.co/ajax/haseebmujeeb360@gmail.com", {
+      const response = await fetch(`${API_URL}/api/messages`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -1262,20 +1454,21 @@ export default function App() {
         body: JSON.stringify({
           name: form.name.trim(),
           email: form.email.trim(),
-          project_type: form.projectType || "Not specified",
-          budget_range: form.budget || "Not specified",
-          subject: form.subject.trim() || "Portfolio website enquiry",
+          projectType: form.projectType || "Not specified",
+          budget: form.budget || "Not specified",
+          subject:
+            form.subject.trim() ||
+            "Portfolio website enquiry",
           message: form.message.trim(),
-          _subject: `New portfolio enquiry from ${form.name.trim()}`,
-          _replyto: form.email.trim(),
-          _template: "table",
-          _captcha: "false",
-          _url: typeof window !== "undefined" ? window.location.href : "Portfolio contact form",
+          sourceUrl:
+            typeof window !== "undefined"
+              ? window.location.href
+              : "",
         }),
       });
 
       const result = await response.json().catch(() => ({}));
-      if (!response.ok || result.success === false || result.success === "false") {
+      if (!response.ok || result.success === false) {
         throw new Error(result.message || "Unable to send your message right now.");
       }
 
@@ -1300,7 +1493,16 @@ export default function App() {
     }
   };
 
-  const filteredProjects = activeFilter === "All" ? PROJECTS : PROJECTS.filter((project) => project.filters.includes(activeFilter));
+  const filteredProjects =
+    activeFilter === "All"
+      ? projects
+      : projects.filter((project) =>
+          (project.filters || []).includes(activeFilter)
+        );
+
+  const featuredProjects = projects
+    .filter((project) => project.featured)
+    .slice(0, 4);
 
   return (
     <div className="ds">
@@ -2461,8 +2663,8 @@ export default function App() {
               </Reveal>
 
               <div className="proj-grid2">
-                {PROJECTS.slice(0, 4).map((project, index) => (
-                  <Reveal as="div" delay={(index % 2) * 90} key={project.title}>
+                {featuredProjects.map((project, index) => (
+                  <Reveal as="div" delay={(index % 2) * 90} key={project.id || project.slug || project.title}>
                     <ProjectCard project={project} onOpen={setSelectedProject} />
                   </Reveal>
                 ))}
@@ -2854,7 +3056,7 @@ export default function App() {
                     <Reveal
                       as="div"
                       delay={(index % 2) * 90}
-                      key={project.title}
+                      key={project.id || project.slug || project.title}
                     >
                       <ProjectCard project={project} onOpen={setSelectedProject} />
                     </Reveal>
