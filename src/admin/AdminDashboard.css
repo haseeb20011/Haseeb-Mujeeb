@@ -60,7 +60,9 @@
   width: var(--cms-sidebar-width);
   display: flex;
   flex-direction: column;
-  overflow: hidden;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
   padding: 27px 18px 20px;
   color: #ffffff;
   background:
@@ -787,8 +789,8 @@
 }
 
 .cms-site-preview__frame iframe {
-  width: 1500px;
-  height: 1000px;
+  width: 333.333%;
+  height: 333.333%;
   border: 0;
   transform: scale(0.30);
   transform-origin: top left;
@@ -892,14 +894,24 @@
 
 .cms-performance-chart {
   position: relative;
-  height: 185px;
-  margin-top: 2px;
+  width: 100%;
+  height: auto;
+  min-height: 190px;
+  margin-top: 4px;
+  overflow: hidden;
 }
 
-.cms-performance-chart svg {
+.cms-performance-chart > svg {
   width: 100%;
   height: 150px;
   overflow: visible;
+}
+
+.cms-performance-chart > div > svg {
+  width: 34px !important;
+  height: 34px !important;
+  color: var(--cms-purple-2);
+  flex: 0 0 auto;
 }
 
 .cms-chart-grid line {
@@ -1043,7 +1055,7 @@
 ========================================================= */
 
 .cms-list-panel {
-  min-height: 215px;
+  min-height: 0;
 }
 
 .cms-panel-link {
@@ -1492,5 +1504,548 @@
 
   .cms-panel {
     padding: 12px;
+  }
+}
+
+/* =========================================================
+   Final dashboard polish
+   ========================================================= */
+
+.cms-dashboard,
+.cms-main,
+.cms-content,
+.cms-dashboard-home,
+.cms-panel,
+.cms-quick-panel,
+.cms-stat-card {
+  min-width: 0;
+}
+
+.cms-dashboard,
+.cms-main {
+  width: 100%;
+  overflow-x: clip;
+}
+
+.cms-sidebar {
+  height: 100vh;
+  height: 100dvh;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.18) transparent;
+}
+
+.cms-sidebar::-webkit-scrollbar {
+  width: 6px;
+}
+
+.cms-sidebar::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.18);
+}
+
+.cms-topbar__left,
+.cms-topbar__actions,
+.cms-panel__header > *,
+.cms-site-preview__footer > *,
+.cms-activity-row > *,
+.cms-compact-row > *,
+.cms-message-row > * {
+  min-width: 0;
+}
+
+.cms-topbar__actions {
+  margin-left: auto;
+}
+
+/* Performance is an empty state until analytics is connected.
+   Keep it compact and do not show misleading controls. */
+.cms-performance .cms-period-button,
+.cms-performance > .cms-panel-action {
+  display: none;
+}
+
+.cms-performance-chart {
+  min-height: 170px !important;
+  display: grid !important;
+  place-items: center !important;
+  padding: 18px !important;
+  text-align: center !important;
+}
+
+.cms-performance-chart > div {
+  width: min(100%, 390px);
+  margin: 0 auto;
+}
+
+.cms-performance-chart > div > svg {
+  width: 34px !important;
+  height: 34px !important;
+  margin-bottom: 6px;
+}
+
+.cms-performance-chart > div > strong {
+  display: block;
+  margin-top: 8px !important;
+  font-size: 15px;
+  line-height: 1.35;
+  color: #202332;
+}
+
+.cms-performance-chart > div > p {
+  max-width: 330px !important;
+  margin: 7px auto 0 !important;
+  color: #8b92a5;
+  font-size: 10px;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+}
+
+.cms-performance__metrics {
+  margin-bottom: 2px;
+}
+
+.cms-performance-metric {
+  min-width: 0;
+}
+
+.cms-performance-metric small {
+  white-space: nowrap;
+}
+
+/* Improve dashboard readability without changing its visual language. */
+.cms-section-heading h2 {
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.cms-activity-row__copy strong,
+.cms-compact-row__copy strong,
+.cms-message-copy strong {
+  font-size: 9px;
+}
+
+.cms-activity-row__copy span,
+.cms-compact-row__copy span,
+.cms-message-copy span {
+  font-size: 8px;
+}
+
+.cms-list-status,
+.cms-compact-row time,
+.cms-message-row time,
+.cms-activity-row time {
+  font-size: 7px;
+}
+
+.cms-message-total {
+  margin: 10px 0 2px;
+  font-size: 8px;
+}
+
+/* Keep cards from clipping long dynamic data. */
+.cms-panel,
+.cms-stat-card,
+.cms-quick-panel {
+  overflow: hidden;
+}
+
+.cms-activity-row__copy,
+.cms-compact-row__copy,
+.cms-message-copy {
+  overflow: hidden;
+}
+
+/* Accessible focus treatment. */
+.cms-dashboard button:focus-visible,
+.cms-dashboard a:focus-visible,
+.cms-dashboard input:focus-visible {
+  outline: 2px solid var(--cms-purple);
+  outline-offset: 2px;
+}
+
+@media (hover: none) {
+  .cms-sidebar__nav-button:hover,
+  .cms-quick-card:hover {
+    transform: none;
+  }
+}
+
+/* Tablet */
+@media (max-width: 1150px) {
+  .cms-content {
+    padding-left: clamp(18px, 2.5vw, 28px);
+    padding-right: clamp(18px, 2.5vw, 28px);
+  }
+
+  .cms-overview-grid,
+  .cms-lists-grid {
+    gap: 12px;
+  }
+}
+
+/* Mobile navigation / tablet portrait */
+@media (max-width: 930px) {
+  .cms-sidebar {
+    width: min(290px, 88vw);
+    padding-bottom: max(20px, env(safe-area-inset-bottom));
+    box-shadow: 24px 0 60px rgba(8, 9, 18, 0.24);
+  }
+
+  .cms-sidebar__support {
+    margin-top: 24px;
+  }
+
+  .cms-dashboard-hero {
+    gap: 18px;
+  }
+}
+
+/* Mobile */
+@media (max-width: 760px) {
+  .cms-topbar {
+    min-height: 62px;
+    gap: 8px;
+    padding:
+      0 max(12px, env(safe-area-inset-right))
+      0 max(12px, env(safe-area-inset-left));
+  }
+
+  .cms-topbar__left {
+    flex: 0 1 auto;
+    gap: 8px;
+  }
+
+  .cms-topbar__actions {
+    gap: 3px;
+  }
+
+  .cms-menu-toggle,
+  .cms-topbar__search,
+  .cms-topbar__notification,
+  .cms-topbar__view-site {
+    width: 40px;
+    min-width: 40px;
+    height: 40px;
+  }
+
+  .cms-content {
+    padding:
+      20px max(12px, env(safe-area-inset-right))
+      34px max(12px, env(safe-area-inset-left));
+  }
+
+  .cms-dashboard-hero {
+    gap: 15px;
+    margin-bottom: 13px;
+  }
+
+  .cms-dashboard-hero__copy {
+    padding: 2px 0;
+  }
+
+  .cms-dashboard-hero__copy h1 {
+    font-size: clamp(26px, 7.5vw, 32px);
+    line-height: 1.08;
+  }
+
+  .cms-dashboard-hero__copy p {
+    font-size: 11px;
+  }
+
+  .cms-quick-panel {
+    padding: 13px;
+  }
+
+  .cms-quick-grid {
+    gap: 8px;
+  }
+
+  .cms-quick-card {
+    min-height: 78px;
+  }
+
+  .cms-quick-card strong {
+    font-size: 9px;
+  }
+
+  .cms-stat-grid,
+  .cms-overview-grid,
+  .cms-lists-grid {
+    gap: 10px;
+  }
+
+  .cms-stat-card {
+    min-height: 84px;
+    gap: 12px;
+    padding: 13px;
+  }
+
+  .cms-stat-card__icon {
+    width: 42px;
+    height: 42px;
+  }
+
+  .cms-stat-card__copy > span {
+    font-size: 10px;
+  }
+
+  .cms-stat-card__copy > strong {
+    font-size: 22px;
+  }
+
+  .cms-stat-card__copy > small {
+    font-size: 8px;
+  }
+
+  .cms-panel {
+    padding: 13px;
+  }
+
+  .cms-panel__header {
+    gap: 8px;
+  }
+
+  .cms-site-preview__frame {
+    height: 180px;
+  }
+
+  .cms-performance__metrics {
+    gap: 7px;
+  }
+
+  .cms-performance-metric {
+    min-height: 60px;
+    padding: 9px;
+  }
+
+  .cms-performance-metric > span {
+    font-size: 8px;
+  }
+
+  .cms-performance-metric strong {
+    font-size: 13px;
+  }
+
+  .cms-performance-metric small {
+    font-size: 7px;
+  }
+
+  .cms-performance-chart {
+    min-height: 165px !important;
+    padding: 16px 12px !important;
+  }
+
+  .cms-performance-chart > div > strong {
+    font-size: 14px;
+  }
+
+  .cms-performance-chart > div > p {
+    max-width: 280px !important;
+    font-size: 10px;
+  }
+
+  .cms-activity-row,
+  .cms-compact-row,
+  .cms-message-row {
+    min-height: 55px;
+  }
+
+  .cms-activity-row__copy strong,
+  .cms-compact-row__copy strong,
+  .cms-message-copy strong {
+    font-size: 10px;
+  }
+
+  .cms-activity-row__copy span,
+  .cms-compact-row__copy span,
+  .cms-message-copy span {
+    font-size: 9px;
+  }
+
+  .cms-panel-action,
+  .cms-panel-link,
+  .cms-card-button {
+    min-height: 34px;
+    font-size: 9px;
+  }
+
+  .cms-list-panel {
+    min-height: 0;
+  }
+}
+
+/* Small phones */
+@media (max-width: 520px) {
+  .cms-panel__header {
+    flex-wrap: wrap;
+    align-items: center;
+  }
+
+  .cms-panel__header > :last-child:not(:first-child) {
+    margin-left: auto;
+  }
+
+  .cms-site-preview__footer {
+    flex-wrap: wrap;
+  }
+
+  .cms-site-preview__footer > a:first-child {
+    flex: 1 1 140px;
+  }
+
+  .cms-site-preview__frame {
+    height: 165px;
+  }
+
+  .cms-message-row {
+    grid-template-columns:
+      34px
+      minmax(0, 1fr)
+      7px;
+  }
+
+  .cms-message-row time {
+    display: none;
+  }
+
+  .cms-compact-row {
+    grid-template-columns:
+      35px
+      minmax(0, 1fr)
+      auto;
+  }
+
+  .cms-compact-row time,
+  .cms-compact-row > button {
+    display: none;
+  }
+
+  .cms-activity-row {
+    grid-template-columns:
+      30px
+      minmax(0, 1fr)
+      7px;
+  }
+
+  .cms-activity-row time {
+    display: none;
+  }
+
+  .cms-message-total {
+    padding-top: 2px;
+  }
+}
+
+/* 320–390px phones */
+@media (max-width: 390px) {
+  .cms-content {
+    padding-left: 10px;
+    padding-right: 10px;
+  }
+
+  .cms-dashboard-hero__copy h1 {
+    font-size: 27px;
+  }
+
+  .cms-quick-grid,
+  .cms-performance__metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .cms-quick-card {
+    min-height: 74px;
+    padding: 8px;
+  }
+
+  .cms-stat-card {
+    min-height: 80px;
+  }
+
+  .cms-performance-chart {
+    min-height: 155px !important;
+  }
+
+  .cms-performance-chart > div > svg {
+    width: 30px !important;
+    height: 30px !important;
+  }
+
+  .cms-performance-chart > div > strong {
+    font-size: 13px;
+  }
+
+  .cms-performance-chart > div > p {
+    font-size: 9px;
+    line-height: 1.5;
+  }
+
+  .cms-topbar__notification {
+    display: none;
+  }
+}
+
+
+
+/* =========================================================
+   Empty states
+   ========================================================= */
+
+.cms-message-list:empty {
+  min-height: 118px;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 5px;
+  padding: 18px;
+  border: 1px dashed #e5e0f6;
+  border-radius: 10px;
+  background:
+    linear-gradient(
+      180deg,
+      rgba(139, 92, 246, 0.025),
+      rgba(139, 92, 246, 0.055)
+    );
+  text-align: center;
+}
+
+.cms-message-list:empty::before {
+  content: "No messages yet";
+  color: #2c3040;
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.cms-message-list:empty::after {
+  content: "New contact messages will appear here.";
+  max-width: 220px;
+  color: #999fab;
+  font-size: 8px;
+  line-height: 1.55;
+}
+
+.cms-message-list:empty + .cms-message-total {
+  display: none;
+}
+
+@media (max-width: 760px) {
+  .cms-message-list:empty {
+    min-height: 105px;
+    padding: 16px;
+  }
+
+  .cms-message-list:empty::before {
+    font-size: 11px;
+  }
+
+  .cms-message-list:empty::after {
+    font-size: 9px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cms-sidebar,
+  .cms-sidebar__nav-button,
+  .cms-quick-card {
+    transition: none !important;
   }
 }
