@@ -13,6 +13,7 @@ const mediaRoutes = require("./routes/mediaRoutes");
 const activityRoutes = require("./routes/activityRoutes");
 
 const auditActivity = require("./middleware/auditActivity");
+const connectDatabase = require("./config/database");
 
 const app = express();
 
@@ -77,6 +78,24 @@ const apiLimiter = rateLimit({
 });
 
 app.use("/api", apiLimiter);
+
+/*
+  Vercel runs this Express app as a function. Connect to MongoDB
+  on API requests instead of relying only on server.js startup.
+  The connection helper reuses an existing/in-flight connection.
+*/
+app.use("/api", async (req, res, next) => {
+  if (req.path === "/health") {
+    return next();
+  }
+
+  try {
+    await connectDatabase();
+    return next();
+  } catch (error) {
+    return next(error);
+  }
+});
 
 const contactFormLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
