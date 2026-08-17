@@ -1,4 +1,5 @@
-const Media = require("../models/Media");
+﻿const Media = require("../models/Media");
+const Project = require("../models/Project");
 const logActivity = require("../utils/logActivity");
 
 /*
@@ -75,7 +76,7 @@ const formatDimensions = (
     Number(width) > 0 &&
     Number(height) > 0
   ) {
-    return `${Number(width)} × ${Number(
+    return `${Number(width)} Ã— ${Number(
       height
     )}`;
   }
@@ -619,20 +620,71 @@ const deleteMedia = async (
       });
     }
 
+    /*
+     * Protect live project images from accidental deletion.
+     * A professional CMS should not allow an asset to be
+     * removed while published/project content still uses it.
+     */
+    const usedByProjects =
+      media.url
+        ? await Project.find({
+            image: media.url,
+          })
+            .select(
+              "title slug status"
+            )
+            .lean()
+        : [];
+
+    if (
+      usedByProjects.length >
+      0
+    ) {
+      return res.status(409).json({
+        success: false,
+        code:
+          "MEDIA_IN_USE",
+        message:
+          `This image is currently used by ${usedByProjects.length} project${usedByProjects.length === 1 ? "" : "s"}. Replace or remove it from the project first, then delete it from Media Library.`,
+        usedBy:
+          usedByProjects.map(
+            (project) => ({
+              id:
+                String(
+                  project._id
+                ),
+              title:
+                project.title,
+              slug:
+                project.slug,
+              status:
+                project.status,
+            })
+          ),
+      });
+    }
+
     const isVercelBlob =
       media.storageProvider ===
         "vercel-blob" &&
-      Boolean(media.url) &&
-      String(media.url).includes(
-        ".blob.vercel-storage.com/"
+      Boolean(
+        media.url ||
+          media.blobPathname
       );
 
-    /*
-     * Do not remove the MongoDB record if
-     * deleting the real Blob file fails.
-     * This prevents orphan files.
-     */
     if (isVercelBlob) {
+      const blobToken =
+        process.env
+          .BLOB_READ_WRITE_TOKEN;
+
+      if (!blobToken) {
+        return res.status(500).json({
+          success: false,
+          message:
+            "Media storage is not configured for deletion. BLOB_READ_WRITE_TOKEN is missing on the backend.",
+        });
+      }
+
       try {
         const {
           del,
@@ -640,7 +692,14 @@ const deleteMedia = async (
           "@vercel/blob"
         );
 
-        await del(media.url);
+        await del(
+          media.url ||
+            media.blobPathname,
+          {
+            token:
+              blobToken,
+          }
+        );
       } catch (blobError) {
         console.error(
           "Vercel Blob delete failed:",
@@ -649,9 +708,8 @@ const deleteMedia = async (
 
         return res.status(502).json({
           success: false,
-
           message:
-            "The file could not be removed from storage. The database record was kept.",
+            "The file could not be removed from Vercel Blob. The Media Library record was kept so no data is lost.",
         });
       }
     }
@@ -661,23 +719,28 @@ const deleteMedia = async (
     await logActivity({
       type: "media",
       action: "deleted",
-      title: `Deleted ${media.title}`,
-      description: "Media item was permanently deleted.",
-      entityId: media._id,
-      entityType: "Media",
+      title:
+        `Deleted ${media.title}`,
+      description:
+        "Media item was permanently deleted.",
+      entityId:
+        media._id,
+      entityType:
+        "Media",
       metadata: {
-        mimeType: media.mimeType,
-        url: media.url,
+        mimeType:
+          media.mimeType,
+        url:
+          media.url,
       },
-      admin: req.admin,
+      admin:
+        req.admin,
     });
 
     res.status(200).json({
       success: true,
-
       message:
         "Media deleted successfully.",
-
       deletedId:
         String(media._id),
     });

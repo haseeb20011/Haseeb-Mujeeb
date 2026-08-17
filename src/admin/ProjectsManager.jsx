@@ -17,6 +17,8 @@ import {
   X,
 } from "lucide-react";
 
+import MediaPickerModal from "./MediaPickerModal";
+import { uploadMediaFile } from "./mediaLibraryClient";
 import "./ProjectsManager.css";
 
 const STORAGE_KEY = "portfolio-cms-projects";
@@ -575,6 +577,9 @@ export default function ProjectsManager({
   const [busyId, setBusyId] = useState(null);
   const [loadError, setLoadError] = useState("");
   const [formError, setFormError] = useState("");
+  const [mediaPickerOpen, setMediaPickerOpen] = useState(false);
+  const [imageUploading, setImageUploading] = useState(false);
+  const [imageUploadProgress, setImageUploadProgress] = useState(0);
 
   const applyProjects = (nextProjects) => {
     const normalizedProjects =
@@ -763,37 +768,47 @@ setForm({
     }));
   };
 
-  const handleImageUpload = (event) => {
+  const handleImageUpload = async (event) => {
     const file = event.target.files?.[0];
 
     if (!file) {
       return;
     }
 
-    if (file.size > 5 * 1024 * 1024) {
+    if (!file.type.startsWith("image/")) {
       setFormError(
-        "Use a project image smaller than 5 MB."
+        "Project images must be an image file."
       );
       event.target.value = "";
       return;
     }
 
-    const reader = new FileReader();
+    setImageUploading(true);
+    setImageUploadProgress(0);
+    setFormError("");
 
-    reader.onload = () => {
+    try {
+      const mediaItem = await uploadMediaFile(
+        file,
+        {
+          onProgress: setImageUploadProgress,
+        }
+      );
+
       setForm((current) => ({
         ...current,
-        image: String(reader.result || ""),
+        image: mediaItem.url,
       }));
-    };
-
-    reader.onerror = () => {
+    } catch (requestError) {
       setFormError(
-        "The selected project image could not be read."
+        requestError.message ||
+          "Project image upload failed."
       );
-    };
-
-    reader.readAsDataURL(file);
+    } finally {
+      setImageUploading(false);
+      setImageUploadProgress(0);
+      event.target.value = "";
+    }
   };
 
   const handleSubmit = async (event) => {
@@ -1747,16 +1762,33 @@ setForm({
                     )}
                   </div>
 
-                  <label className="cms-projects__upload">
-                    <UploadCloud size={15} />
-                    Upload image
+                  <div className="cms-projects__image-actions">
+                    <label className="cms-projects__upload">
+                      <UploadCloud size={15} />
+                      {imageUploading
+                        ? `Uploading ${imageUploadProgress}%`
+                        : "Upload new"}
 
-                    <input
-                      type="file"
-                      accept="image/*"
-                      onChange={handleImageUpload}
-                    />
-                  </label>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        onChange={handleImageUpload}
+                        disabled={imageUploading}
+                      />
+                    </label>
+
+                    <button
+                      type="button"
+                      className="cms-projects__upload cms-projects__choose-media"
+                      onClick={() =>
+                        setMediaPickerOpen(true)
+                      }
+                      disabled={imageUploading}
+                    >
+                      <ImagePlus size={15} />
+                      Choose from Media Library
+                    </button>
+                  </div>
 
                   <input
                     type="text"
@@ -1769,6 +1801,10 @@ setForm({
                     }
                     placeholder="Or paste an image URL"
                   />
+
+                  <small className="cms-projects__image-help">
+                    New uploads are stored in Vercel Blob and added automatically to the Media Library.
+                  </small>
                 </div>
 
                 <div className="cms-projects__links">
@@ -1922,6 +1958,19 @@ setForm({
           </section>
         </div>
       )}
+      <MediaPickerModal
+        open={mediaPickerOpen}
+        currentUrl={form.image}
+        onClose={() =>
+          setMediaPickerOpen(false)
+        }
+        onSelect={(item) =>
+          setForm((current) => ({
+            ...current,
+            image: item.url,
+          }))
+        }
+      />
     </section>
   );
 }
@@ -1949,3 +1998,4 @@ function ProjectStat({
     </article>
   );
 }
+
