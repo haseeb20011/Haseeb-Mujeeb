@@ -1,4 +1,4 @@
-﻿const Media = require("../models/Media");
+const Media = require("../models/Media");
 const Project = require("../models/Project");
 const logActivity = require("../utils/logActivity");
 

@@ -1,4 +1,4 @@
-﻿import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   CheckCircle2,
   Copy,
@@ -48,7 +48,7 @@ const CASE_STUDY_SEEDS = [
     solution: "Built a category-led WordPress system with modular homepage sections, archives, and mobile-first reading paths.",
     outcome: "A scalable editorial experience that supports frequent publishing and makes stories easier to discover.",
     desc: "A publishing-focused news portal for Pakistan's aviation, tourism, and hospitality sectors, built around a scalable editorial structure for frequent content updates.",
-    highlight: "Editorial taxonomy Â· Fast mobile reading Â· Content discovery",
+    highlight: "Editorial taxonomy · Fast mobile reading · Content discovery",
     stack: ["WordPress", "Elementor", "Editorial CMS", "Taxonomy", "Responsive"],
     details: [
       "Multi-level category and tag architecture spanning more than 20 editorial sub-sections.",
@@ -65,7 +65,7 @@ const CASE_STUDY_SEEDS = [
     code: "JS",
     category: "WordPress",
     filters: ["WordPress", "Live"],
-    projectType: "Clean Energy Â· Lead Generation",
+    projectType: "Clean Energy · Lead Generation",
     title: "Julien's Solar Solutions",
     domain: "juliensolarsolutions.com",
     liveUrl: "https://juliensolarsolutions.com/",
@@ -78,7 +78,7 @@ const CASE_STUDY_SEEDS = [
     solution: "Created a focused page hierarchy with repeated calls to action, service clarity, trust content, and streamlined forms.",
     outcome: "A more direct lead-generation journey with fewer distractions between initial interest and enquiry.",
     desc: "A residential solar website designed to move Massachusetts homeowners from the value proposition to a quote request without unnecessary friction.",
-    highlight: "Lead capture Â· Funnel design Â· Appointment conversion",
+    highlight: "Lead capture · Funnel design · Appointment conversion",
     stack: ["WordPress", "Elementor", "Forms", "Lead Generation", "Responsive"],
     details: [
       "Hero-to-form conversion flow with persistent calls to action.",
@@ -95,7 +95,7 @@ const CASE_STUDY_SEEDS = [
     code: "IS",
     category: "WordPress",
     filters: ["WordPress", "Live"],
-    projectType: "Hospitality Â· Booking",
+    projectType: "Hospitality · Booking",
     title: "Inspire Salon",
     domain: "inspiresalonstl.com",
     liveUrl: "http://inspiresalonstl.com/",
@@ -108,7 +108,7 @@ const CASE_STUDY_SEEDS = [
     solution: "Structured services, promotions, social proof, location details, and Meevo booking around clear guest intent.",
     outcome: "A cohesive salon experience that helps visitors move naturally from inspiration to appointment booking.",
     desc: "A warm, service-led salon website that connects browsing, promotions, social proof, and appointment booking in one consistent guest journey.",
-    highlight: "Meevo booking Â· Service catalogue Â· Local conversion",
+    highlight: "Meevo booking · Service catalogue · Local conversion",
     stack: ["WordPress", "Elementor", "Meevo", "Service UX", "Responsive"],
     details: [
       "Direct connection to the Meevo salon booking and customer portal.",
@@ -138,7 +138,7 @@ const CASE_STUDY_SEEDS = [
     solution: "Used comparison content, trust-building sections, scheduling, and multi-step intake flows to simplify decisions.",
     outcome: "A clearer qualification journey that guides prospects toward the right consultation or application path.",
     desc: "A business-financing and credit-repair website that explains multiple funding options, builds trust, and moves qualified prospects into scheduling and application flows.",
-    highlight: "Lead qualification Â· Funding comparison Â· Application intake",
+    highlight: "Lead qualification · Funding comparison · Application intake",
     stack: ["WordPress", "Elementor", "Calendly", "Multi-step Forms", "Responsive"],
     details: [
       "Funding comparison table covering seven products and their best use cases.",
@@ -155,7 +155,7 @@ const CASE_STUDY_SEEDS = [
     code: "MD",
     category: "Shopify",
     filters: ["Shopify", "Live"],
-    projectType: "E-commerce Â· Fashion",
+    projectType: "E-commerce · Fashion",
     title: "Mardo",
     domain: "mardopk.com",
     liveUrl: "https://www.mardopk.com/",
@@ -168,7 +168,7 @@ const CASE_STUDY_SEEDS = [
     solution: "Organized collections, product storytelling, variants, material education, and commerce actions into one storefront.",
     outcome: "An editorial shopping experience that balances brand credibility with practical product and checkout flows.",
     desc: "A Shopify storefront for a technical medical-scrubwear label, balancing editorial presentation with clear collection browsing and checkout-ready product flows.",
-    highlight: "Collection architecture Â· Product storytelling Â· Commerce UX",
+    highlight: "Collection architecture · Product storytelling · Commerce UX",
     stack: ["Shopify", "E-commerce", "Collections", "Product UX", "Checkout"],
     details: [
       "Shopify collection structure across Tops, Bottoms, Sets, and Outerwear.",
@@ -185,9 +185,9 @@ const CASE_STUDY_SEEDS = [
     code: "GO",
     category: "WordPress",
     filters: ["WordPress", "In Development"],
-    projectType: "Agency Build Â· Consulting",
+    projectType: "Agency Build · Consulting",
     title: "Go Studio",
-    domain: "Staged build Â· Pantheon environment",
+    domain: "Staged build · Pantheon environment",
     liveUrl: "https://dev-go-studio.pantheonsite.io/",
     status: "In Development",
     statusTone: "development",
@@ -198,14 +198,14 @@ const CASE_STUDY_SEEDS = [
     solution: "Built reusable page patterns, service architecture, case-study templates, and a controlled Pantheon workflow.",
     outcome: "A staged foundation that can expand consistently as the brand positioning and content are finalized.",
     desc: "An innovation-consulting brand presence being developed page by page, with a strong homepage narrative, service structure, case-study presentation, and reusable component patterns.",
-    highlight: "Staged delivery Â· Service architecture Â· Case-study system",
+    highlight: "Staged delivery · Service architecture · Case-study system",
     stack: ["WordPress", "Pantheon", "Component System", "Staging Workflow"],
     details: [
       "Consulting-brand homepage narrative and conversion structure.",
       "Service architecture designed for a growing studio offering.",
       "Case-study templates prepared for consistent future publishing.",
       "Reusable component patterns built ahead of client review.",
-      "Pantheon Dev â†’ Test â†’ Live workflow for controlled releases.",
+      "Pantheon Dev → Test → Live workflow for controlled releases.",
     ],
     image: "/images/projects/go-studio.webp",
     accent: "#FF5A36",
@@ -215,9 +215,9 @@ const CASE_STUDY_SEEDS = [
     code: "DF",
     category: "WordPress",
     filters: ["WordPress", "In Development"],
-    projectType: "Agency Build Â· Digital Services",
+    projectType: "Agency Build · Digital Services",
     title: "DGT Forge",
-    domain: "Staged build Â· Pantheon environment",
+    domain: "Staged build · Pantheon environment",
     liveUrl: "https://dev-dgt-forge.pantheonsite.io/",
     status: "In Development",
     statusTone: "development",
@@ -228,7 +228,7 @@ const CASE_STUDY_SEEDS = [
     solution: "Created reusable service, portfolio, process, pricing, proof, and contact modules in a staged WordPress build.",
     outcome: "A coherent agency framework ready for structured review, iteration, and production release.",
     desc: "A full-service digital agency website being assembled section by section in a staged WordPress environment, with focused service, portfolio, process, pricing, and contact experiences.",
-    highlight: "Agency architecture Â· Staged WordPress Â· Service positioning",
+    highlight: "Agency architecture · Staged WordPress · Service positioning",
     stack: ["WordPress", "Pantheon", "Service Pages", "Git Workflow"],
     details: [
       "Structured service groups for design, development, marketing, and SaaS.",
@@ -245,7 +245,7 @@ const CASE_STUDY_SEEDS = [
     code: "TK",
     category: "Web Development",
     filters: ["Live"],
-    projectType: "B2B Consulting Â· Technology",
+    projectType: "B2B Consulting · Technology",
     title: "Teknotch",
     domain: "teknotch.com",
     liveUrl: "https://teknotch.com/",
@@ -258,7 +258,7 @@ const CASE_STUDY_SEEDS = [
     solution: "Organized the website around clear service pathways, concise business messaging, trust-building content, and direct contact opportunities.",
     outcome: "A polished B2B presence that communicates the offer more clearly and gives prospective clients a straightforward route to start a conversation.",
     desc: "A professional B2B consulting website designed to present technology services clearly, strengthen brand credibility, and guide prospective clients toward the right next step.",
-    highlight: "B2B positioning Â· Service clarity Â· Enquiry flow",
+    highlight: "B2B positioning · Service clarity · Enquiry flow",
     stack: ["Responsive", "B2B Website", "Service UX", "Lead Generation"],
     details: [
       "Clear service-led page structure for business and consulting audiences.",
@@ -1627,7 +1627,7 @@ setForm({
           event.target.value,
       }))
     }
-    placeholder="Editorial taxonomy Â· Fast mobile reading"
+    placeholder="Editorial taxonomy · Fast mobile reading"
   />
 </label>
 
