@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { upload } from "@vercel/blob/client";
 import {
   Check,
   Copy,
@@ -19,6 +18,8 @@ import {
   UploadCloud,
   X,
 } from "lucide-react";
+
+import { uploadMediaFile } from "./mediaLibraryClient";
 
 import "./MediaLibraryManager.css";
 
@@ -305,12 +306,17 @@ export default function MediaLibraryManager() {
   }, [filteredItems, selectedItem]);
 
   const handleUpload = async (event) => {
-    const files = Array.from(event.target.files || []);
+    const files = Array.from(
+      event.target.files || []
+    );
 
-    if (files.length === 0) return;
+    if (files.length === 0) {
+      return;
+    }
 
     const oversizedFile = files.find(
-      (file) => file.size > MAX_UPLOAD_SIZE
+      (file) =>
+        file.size > MAX_UPLOAD_SIZE
     );
 
     if (oversizedFile) {
@@ -328,112 +334,78 @@ export default function MediaLibraryManager() {
     const createdItems = [];
 
     try {
-      for (let index = 0; index < files.length; index += 1) {
+      for (
+        let index = 0;
+        index < files.length;
+        index += 1
+      ) {
         const file = files[index];
-        const fileType = getFileType(file);
-        const now = new Date();
-        const year = now.getFullYear();
-        const month = String(now.getMonth() + 1).padStart(2, "0");
 
-        const safeName = file.name
-          .replace(/[^\w.\-]+/g, "-")
-          .replace(/-+/g, "-");
+        const item =
+          await uploadMediaFile(
+            file,
+            {
+              onProgress(
+                percentage
+              ) {
+                const overall =
+                  ((
+                    index +
+                    percentage / 100
+                  ) /
+                    files.length) *
+                  100;
 
-        const pathname = `media/${year}/${month}/${safeName}`;
-
-        const dimensions = await getImageDimensions(file);
-
-        const blob = await upload(pathname, file, {
-          access: "public",
-          handleUploadUrl: getApiUrl("/api/media/upload"),
-          multipart: file.size > 5 * 1024 * 1024,
-          contentType: file.type || undefined,
-          onUploadProgress(progress) {
-            const currentFileProgress =
-              typeof progress?.percentage === "number"
-                ? progress.percentage
-                : 0;
-
-            const overall =
-              ((index + currentFileProgress / 100) / files.length) * 100;
-
-            setUploadProgress(Math.round(overall));
-          },
-        });
-
-        const metadataResponse = await fetch(getApiUrl("/api/media"), {
-          method: "POST",
-          credentials: "include",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            title: getTitleFromFilename(file.name),
-            originalName: file.name,
-            type: fileType,
-            mimeType: file.type || "application/octet-stream",
-            url: blob.url,
-            blobPathname: blob.pathname || pathname,
-            storageProvider: "vercel-blob",
-            alt:
-              fileType === "image"
-                ? getTitleFromFilename(file.name)
-                : "",
-            caption: "",
-            tags: [],
-            sizeBytes: file.size,
-            size: formatFileSize(file.size),
-            width: dimensions.width,
-            height: dimensions.height,
-            dimensions: dimensions.dimensions,
-          }),
-        });
-
-        const metadataData = await metadataResponse
-          .json()
-          .catch(() => ({}));
-
-        if (!metadataResponse.ok || !metadataData.success) {
-          throw new Error(
-            metadataData.message ||
-              `The file uploaded, but its database record could not be saved.`
+                setUploadProgress(
+                  Math.round(
+                    overall
+                  )
+                );
+              },
+            }
           );
-        }
 
-        createdItems.push(normalizeMediaItem(metadataData.item));
+        createdItems.push(
+          item
+        );
       }
 
-      if (createdItems.length > 0) {
+      if (
+        createdItems.length > 0
+      ) {
         setItems((current) => [
           ...createdItems,
           ...current.filter(
             (existing) =>
               !createdItems.some(
-                (created) => created.id === existing.id
+                (created) =>
+                  created.id ===
+                  existing.id
               )
           ),
         ]);
 
-        setSelectedId(createdItems[0].id);
-
-        window.dispatchEvent(
-          new CustomEvent("portfolio-media-updated", {
-            detail: {
-              items: createdItems,
-              count: createdItems.length,
-            },
-          })
+        setSelectedId(
+          createdItems[0].id
         );
 
         showNotice(
           `${createdItems.length} media item${
-            createdItems.length === 1 ? "" : "s"
+            createdItems.length === 1
+              ? ""
+              : "s"
           } uploaded successfully.`
         );
       }
     } catch (error) {
-      console.error("Media upload failed:", error);
-      showError(error.message || "Media upload failed.");
+      console.error(
+        "Media upload failed:",
+        error
+      );
+      showError(
+        error.message ||
+          "Media upload failed."
+      );
     } finally {
       setUploading(false);
       setUploadProgress(0);

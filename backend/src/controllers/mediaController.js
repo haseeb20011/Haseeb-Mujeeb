@@ -76,7 +76,7 @@ const formatDimensions = (
     Number(width) > 0 &&
     Number(height) > 0
   ) {
-    return `${Number(width)} Ã— ${Number(
+    return `${Number(width)} × ${Number(
       height
     )}`;
   }
@@ -665,8 +665,13 @@ const deleteMedia = async (
     }
 
     const isVercelBlob =
-      media.storageProvider ===
-        "vercel-blob" &&
+      (
+        media.storageProvider ===
+          "vercel-blob" ||
+        /blob\.vercel-storage\.com/i.test(
+          String(media.url || "")
+        )
+      ) &&
       Boolean(
         media.url ||
           media.blobPathname

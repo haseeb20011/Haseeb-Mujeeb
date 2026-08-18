@@ -15,6 +15,7 @@ const {
 );
 
 const {
+  createUploadTicket,
   handleBlobUpload,
 } = require(
   "../controllers/blobUploadController"
@@ -24,14 +25,20 @@ const router = express.Router();
 
 /*
 |--------------------------------------------------------------------------
-| Blob upload authorization/callback
+| Blob client upload authorization
 |--------------------------------------------------------------------------
 |
-| Do NOT put protectAdmin directly on this route.
-| The controller itself verifies the admin when generating
-| an upload token, while still allowing Vercel's callback.
+| The ticket endpoint is authenticated normally. The Blob exchange route
+| validates the short-lived ticket passed as clientPayload, while still
+| allowing Vercel's upload-completed callback to reach the same endpoint.
 |
 */
+
+router.get(
+  "/upload-ticket",
+  protectAdmin,
+  createUploadTicket
+);
 
 router.post(
   "/upload",

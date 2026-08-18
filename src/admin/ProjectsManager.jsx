@@ -783,28 +783,51 @@ setForm({
       return;
     }
 
+    const previousImage = form.image;
+    const localPreview =
+      URL.createObjectURL(file);
+
     setImageUploading(true);
     setImageUploadProgress(0);
     setFormError("");
 
+    setForm((current) => ({
+      ...current,
+      image: localPreview,
+    }));
+
     try {
-      const mediaItem = await uploadMediaFile(
-        file,
-        {
-          onProgress: setImageUploadProgress,
-        }
-      );
+      const mediaItem =
+        await uploadMediaFile(
+          file,
+          {
+            onProgress:
+              setImageUploadProgress,
+          }
+        );
 
       setForm((current) => ({
         ...current,
         image: mediaItem.url,
       }));
     } catch (requestError) {
+      setForm((current) => ({
+        ...current,
+        image:
+          current.image ===
+          localPreview
+            ? previousImage
+            : current.image,
+      }));
+
       setFormError(
         requestError.message ||
           "Project image upload failed."
       );
     } finally {
+      URL.revokeObjectURL(
+        localPreview
+      );
       setImageUploading(false);
       setImageUploadProgress(0);
       event.target.value = "";
@@ -1771,7 +1794,7 @@ setForm({
 
                       <input
                         type="file"
-                        accept="image/*"
+                        accept="image/jpeg,image/png,image/webp,image/gif,image/svg+xml,image/avif"
                         onChange={handleImageUpload}
                         disabled={imageUploading}
                       />
@@ -1937,6 +1960,7 @@ setForm({
                   type="button"
                   className="cms-projects__cancel"
                   onClick={closeModal}
+                  disabled={saving || imageUploading}
                 >
                   Cancel
                 </button>
@@ -1944,12 +1968,14 @@ setForm({
                 <button
                   type="submit"
                   className="cms-projects__save"
-                  disabled={saving}
+                  disabled={saving || imageUploading}
                 >
                   <CheckCircle2 size={16} />
-                  {saving
-                    ? "Saving..."
-                    : editingId
+                  {imageUploading
+                    ? "Uploading image..."
+                    : saving
+                      ? "Saving..."
+                      : editingId
                       ? "Save project"
                       : "Create project"}
                 </button>
@@ -1998,4 +2024,3 @@ function ProjectStat({
     </article>
   );
 }
-

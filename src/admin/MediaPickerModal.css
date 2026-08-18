@@ -1,4 +1,4 @@
-﻿.cms-media-picker__overlay {
+.cms-media-picker__overlay {
   position: fixed;
   inset: 0;
   z-index: 220;
@@ -283,4 +283,50 @@
   .cms-media-picker__grid {
     grid-template-columns: 1fr;
   }
+}
+
+/* =========================================================
+   FINAL MEDIA PICKER POLISH
+   ========================================================= */
+
+.cms-media-picker > header span {
+  font-size: 10px;
+}
+
+.cms-media-picker > header h2 {
+  font-size: 22px;
+}
+
+.cms-media-picker > header p {
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.cms-media-picker__toolbar input {
+  font-size: 12px;
+}
+
+.cms-media-picker__toolbar > button,
+.cms-media-picker > footer button {
+  font-size: 11px;
+}
+
+.cms-media-picker__item > strong {
+  font-size: 11px;
+}
+
+.cms-media-picker__item > small {
+  font-size: 9px;
+}
+
+.cms-media-picker__state strong {
+  font-size: 14px;
+}
+
+.cms-media-picker__state p {
+  font-size: 11px;
+}
+
+.cms-media-picker > footer span {
+  font-size: 10px;
 }

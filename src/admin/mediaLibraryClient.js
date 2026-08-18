@@ -1,10 +1,8 @@
-﻿import { upload } from "@vercel/blob/client";
+import { upload } from "@vercel/blob/client";
 
 const API_URL =
   import.meta.env.VITE_API_URL ||
-  (import.meta.env.PROD
-    ? ""
-    : "");
+  (import.meta.env.PROD ? "" : "");
 
 const MAX_UPLOAD_SIZE =
   100 * 1024 * 1024;
@@ -67,13 +65,14 @@ const getTitleFromFilename = (
 
 const getImageDimensions = (file) =>
   new Promise((resolve) => {
-    if (
-      !file.type.startsWith("image/")
-    ) {
+    if (!file.type.startsWith("image/")) {
       resolve({
         width: null,
         height: null,
-        dimensions: "",
+        dimensions:
+          getFileType(file) === "document"
+            ? "Document"
+            : "",
       });
       return;
     }
@@ -96,7 +95,7 @@ const getImageDimensions = (file) =>
         height,
         dimensions:
           width && height
-            ? `${width} Ã— ${height}`
+            ? `${width} × ${height}`
             : "",
       });
     };
@@ -113,6 +112,36 @@ const getImageDimensions = (file) =>
 
     image.src = objectUrl;
   });
+
+const getUploadTicket = async () => {
+  const response = await fetch(
+    getApiUrl(
+      "/api/media/upload-ticket"
+    ),
+    {
+      method: "GET",
+      credentials: "include",
+      cache: "no-store",
+    }
+  );
+
+  const data = await response
+    .json()
+    .catch(() => ({}));
+
+  if (
+    !response.ok ||
+    !data.success ||
+    !data.ticket
+  ) {
+    throw new Error(
+      data.message ||
+        "Unable to authorize the media upload."
+    );
+  }
+
+  return data.ticket;
+};
 
 export const normalizeMediaItem = (
   item = {}
@@ -136,6 +165,12 @@ export const normalizeMediaItem = (
   url:
     item.url ||
     "",
+  blobPathname:
+    item.blobPathname ||
+    "",
+  storageProvider:
+    item.storageProvider ||
+    "",
   alt:
     item.alt ||
     "",
@@ -147,17 +182,18 @@ export const normalizeMediaItem = (
       ? item.tags
       : [],
   width:
-    item.width ??
-    null,
+    item.width ?? null,
   height:
-    item.height ??
-    null,
+    item.height ?? null,
   dimensions:
     item.dimensions ||
-    "",
+    (item.width && item.height
+      ? `${item.width} × ${item.height}`
+      : item.type === "document"
+        ? "Document"
+        : ""),
   sizeBytes:
-    Number(item.sizeBytes) ||
-    0,
+    Number(item.sizeBytes) || 0,
   size:
     item.size ||
     formatFileSize(
@@ -171,6 +207,8 @@ export const normalizeMediaItem = (
     item.uploadedAt ||
     item.createdAt ||
     null,
+  updatedAt:
+    item.updatedAt || null,
 });
 
 export const fetchMediaItems =
@@ -204,6 +242,7 @@ export const fetchMediaItems =
         ),
         {
           credentials: "include",
+          cache: "no-store",
         }
       );
 
@@ -286,6 +325,9 @@ export const uploadMediaFile =
         file
       );
 
+    const uploadTicket =
+      await getUploadTicket();
+
     const blob =
       await upload(
         pathname,
@@ -296,11 +338,11 @@ export const uploadMediaFile =
             getApiUrl(
               "/api/media/upload"
             ),
+          clientPayload:
+            uploadTicket,
           multipart:
             file.size >
-            5 *
-              1024 *
-              1024,
+            5 * 1024 * 1024,
           contentType:
             file.type ||
             undefined,
