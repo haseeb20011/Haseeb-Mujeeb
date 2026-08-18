@@ -28,6 +28,12 @@ const API_URL =
   import.meta.env.VITE_API_URL ||
   (import.meta.env.PROD ? "" : "http://localhost:5000");
 
+const DEVICE_WIDTH = {
+  desktop: "100%",
+  tablet: "820px",
+  mobile: "390px",
+};
+
 const slugify = (value = "") =>
   value
     .toLowerCase()
