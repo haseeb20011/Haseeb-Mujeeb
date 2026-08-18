@@ -25,7 +25,8 @@ import {
 import "./PageBuilder.css";
 
 const API_URL =
-  import.meta.env.VITE_API_URL || "http://localhost:5000";
+  import.meta.env.VITE_API_URL ||
+  (import.meta.env.PROD ? "" : "http://localhost:5000");
 
 const slugify = (value = "") =>
   value
@@ -92,6 +93,33 @@ const targetsFor = (section) => {
     secondaryButton: buttons[1] || null,
   };
 };
+
+const emptyEdit = () => ({
+  content: {
+    eyebrow: "",
+    heading: "",
+    description: "",
+    primaryButton: "",
+    secondaryButton: "",
+  },
+  style: {
+    enabled: false,
+    background: "",
+    text: "",
+    heading: "",
+    align: "",
+  },
+  advanced: {
+    enabled: false,
+    desktopTop: "",
+    desktopBottom: "",
+    mobileTop: "",
+    mobileBottom: "",
+    hideDesktop: false,
+    hideTablet: false,
+    hideMobile: false,
+  },
+});
 
 const captureEdit = (section) => {
   const targets = targetsFor(section);

@@ -1098,34 +1098,189 @@ function normalizePathname(pathname = "/") {
   return normalized || "/";
 }
 
-function getRouteFromPath() {
+function getRouteFromPath(cmsPages = null) {
   if (typeof window === "undefined") {
-    return { page: "home", section: "home", routeKey: "home" };
+    return {
+      page: "home",
+      section: "home",
+      routeKey: "home",
+      cmsPage: null,
+    };
   }
 
   const path = normalizePathname(window.location.pathname);
 
+  if (path === ROUTE_PATHS.home) {
+    return { page: "home", section: "home", routeKey: "home", cmsPage: null };
+  }
+
   if (path === ROUTE_PATHS.about) {
-    return { page: "about", section: null, routeKey: "about" };
+    return { page: "about", section: null, routeKey: "about", cmsPage: null };
   }
 
   if (path === ROUTE_PATHS.services) {
-    return { page: "services", section: null, routeKey: "services" };
+    return { page: "services", section: null, routeKey: "services", cmsPage: null };
   }
 
   if (path === ROUTE_PATHS.projects) {
-    return { page: "projects", section: null, routeKey: "projects" };
+    return { page: "projects", section: null, routeKey: "projects", cmsPage: null };
   }
 
   if (path === ROUTE_PATHS.contact) {
-    return { page: "contact", section: null, routeKey: "contact" };
+    return { page: "contact", section: null, routeKey: "contact", cmsPage: null };
   }
 
   if (path === ROUTE_PATHS.process) {
-    return { page: "home", section: "process", routeKey: "process" };
+    return { page: "home", section: "process", routeKey: "process", cmsPage: null };
   }
 
-  return { page: "home", section: "home", routeKey: "home" };
+  if (Array.isArray(cmsPages)) {
+    const dynamicPage = cmsPages.find(
+      (item) =>
+        normalizePathname(item.slug || "/") === path
+    );
+
+    if (dynamicPage) {
+      return {
+        page: "cms",
+        section: null,
+        routeKey: dynamicPage.key,
+        cmsPage: dynamicPage,
+      };
+    }
+
+    return {
+      page: "not-found",
+      section: null,
+      routeKey: "not-found",
+      cmsPage: null,
+    };
+  }
+
+  return {
+    page: "home",
+    section: "home",
+    routeKey: "home",
+    cmsPage: null,
+  };
+}
+
+function DynamicCmsPage({
+  cmsPage,
+  preview = false,
+  onContact,
+}) {
+  const content =
+    cmsPage?.content &&
+    typeof cmsPage.content === "object"
+      ? cmsPage.content
+      : {};
+
+  const edits = preview
+    ? content.builderDraft ||
+      content.builderPublished ||
+      {}
+    : content.builderPublished || {};
+
+  const header =
+    edits["cms-page-header"]?.content || {};
+  const body =
+    edits["cms-page-content"]?.content || {};
+  const cta =
+    edits["cms-page-cta"]?.content || {};
+
+  const title = cmsPage?.title || "Untitled Page";
+  const template =
+    cmsPage?.template || "Standard Page";
+
+  const starterDescription =
+    {
+      "Landing Page":
+        "A focused landing page ready for your message, proof, and call to action.",
+      "Services Page":
+        "A flexible services page ready for capabilities, process, and outcomes.",
+      "Portfolio Page":
+        "A portfolio page ready for selected work, results, and supporting details.",
+      "Contact Page":
+        "A contact page ready for enquiry details and clear next steps.",
+      "Blank Page":
+        "A clean starting point ready for custom content.",
+    }[template] ||
+    "A flexible website page ready to customize in the visual builder.";
+
+  return (
+    <>
+      <section id="cms-page-header" className="masthead">
+        <div className="wrap">
+          <Reveal className="crumb">
+            {header.eyebrow || "Haseeb.dev"}
+          </Reveal>
+          <Reveal delay={60}>
+            <h1>{header.heading || title}</h1>
+          </Reveal>
+          <Reveal delay={110}>
+            <p>
+              {header.description ||
+                starterDescription}
+            </p>
+          </Reveal>
+        </div>
+      </section>
+
+      <section
+        id="cms-page-content"
+        className="sec cms-dynamic-content"
+      >
+        <div className="wrap">
+          <Reveal className="sec-head">
+            <Eyebrow>
+              {body.eyebrow || template}
+            </Eyebrow>
+            <h2>
+              {body.heading ||
+                `${title} content`}
+            </h2>
+            <p>
+              {body.description ||
+                "Select this section in the visual builder to replace this starter copy with the final page content."}
+            </p>
+          </Reveal>
+        </div>
+      </section>
+
+      <section
+        id="cms-page-cta"
+        className="cta-banner"
+      >
+        <div className="wrap cta-row">
+          <div>
+            <h2
+              style={{
+                margin: "0 0 8px",
+                fontSize: "clamp(22px,3vw,30px)",
+              }}
+            >
+              {cta.heading ||
+                "Ready to start a conversation?"}
+            </h2>
+            <p>
+              {cta.description ||
+                "Tell me what you are building and I will reply with clear next steps."}
+            </p>
+          </div>
+          <button
+            type="button"
+            className="btn btn-grad"
+            onClick={onContact}
+          >
+            {cta.primaryButton ||
+              "Get In Touch"}{" "}
+            <ArrowRight size={15} />
+          </button>
+        </div>
+      </section>
+    </>
+  );
 }
 
 /* ------------------------------------------------------------------ */
@@ -1141,6 +1296,17 @@ export default function App() {
   const [activeFilter, setActiveFilter] = useState("All");
   const [selectedProject, setSelectedProject] = useState(null);
   const [projects, setProjects] = useState(DEFAULT_PROJECTS);
+  const [cmsPages, setCmsPages] = useState([]);
+  const [cmsConfigLoaded, setCmsConfigLoaded] =
+    useState(false);
+  const [dynamicPage, setDynamicPage] =
+    useState(null);
+
+  const cmsPreview =
+    typeof window !== "undefined" &&
+    new URLSearchParams(
+      window.location.search
+    ).get("cmsPreview") === "1";
 
   const [form, setForm] = useState({
     name: "",
@@ -1154,6 +1320,74 @@ export default function App() {
   const [formError, setFormError] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [website, setWebsite] = useState("");
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadCmsPages = async () => {
+      try {
+        const response = await fetch(
+          `${API_URL}/api/site-config${cmsPreview ? "" : "/public"}`,
+          cmsPreview
+            ? { credentials: "include" }
+            : undefined
+        );
+
+        const data = await response
+          .json()
+          .catch(() => ({}));
+
+        if (!response.ok || data.success === false) {
+          throw new Error(
+            data.message ||
+              "Website pages could not be loaded."
+          );
+        }
+
+        const nextPages = Array.isArray(
+          data.config?.pages
+        )
+          ? data.config.pages
+          : [];
+
+        if (!cancelled) {
+          setCmsPages(nextPages);
+
+          const route =
+            getRouteFromPath(nextPages);
+
+          setPage(route.page);
+          setPendingScroll(route.section);
+          setActiveSection(
+            route.section ||
+              (route.page === "home"
+                ? "home"
+                : "")
+          );
+          setRouteKey(route.routeKey);
+          setDynamicPage(
+            route.cmsPage || null
+          );
+          setCmsConfigLoaded(true);
+        }
+      } catch (error) {
+        console.warn(
+          "Unable to load CMS pages:",
+          error
+        );
+
+        if (!cancelled) {
+          setCmsConfigLoaded(true);
+        }
+      }
+    };
+
+    loadCmsPages();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [cmsPreview]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1236,13 +1470,14 @@ export default function App() {
     }
 
     const syncRouteFromHistory = () => {
-      const route = getRouteFromPath();
+      const route = getRouteFromPath(cmsPages);
       setMenuOpen(false);
       setSelectedProject(null);
       setPage(route.page);
       setPendingScroll(route.section);
       setActiveSection(route.section || (route.page === "home" ? "home" : ""));
       setRouteKey(route.routeKey);
+      setDynamicPage(route.cmsPage || null);
 
       if (route.page !== "home" || !route.section) {
         window.scrollTo({ top: 0, behavior: "auto" });
@@ -1252,10 +1487,28 @@ export default function App() {
     syncRouteFromHistory();
     window.addEventListener("popstate", syncRouteFromHistory);
     return () => window.removeEventListener("popstate", syncRouteFromHistory);
-  }, []);
+  }, [cmsPages]);
 
   useEffect(() => {
-    const meta = PAGE_META[routeKey] || PAGE_META[page] || PAGE_META.home;
+    const meta =
+      page === "cms" && dynamicPage
+        ? {
+            title: `${dynamicPage.title} | Haseeb.dev`,
+            description:
+              dynamicPage.content?.metaDescription ||
+              `Learn more about ${dynamicPage.title}.`,
+            path: dynamicPage.slug,
+          }
+        : page === "not-found"
+          ? {
+              title: "Page Not Found | Haseeb.dev",
+              description:
+                "The requested page could not be found.",
+              path: window.location.pathname,
+            }
+          : PAGE_META[routeKey] ||
+            PAGE_META[page] ||
+            PAGE_META.home;
     const canonicalUrl = `${SITE_URL}${meta.path}`;
 
     document.title = meta.title;
@@ -1287,7 +1540,7 @@ export default function App() {
       document.head.appendChild(canonical);
     }
     canonical.setAttribute("href", canonicalUrl);
-  }, [page, routeKey]);
+  }, [page, routeKey, dynamicPage]);
 
   useEffect(() => {
     if (!menuOpen) return undefined;
@@ -3276,6 +3529,42 @@ export default function App() {
           </section>
         </>
       )}
+
+      {page === "cms" && dynamicPage && (
+        <DynamicCmsPage
+          cmsPage={dynamicPage}
+          preview={cmsPreview}
+          onContact={() =>
+            navigateTo("contact", "page")
+          }
+        />
+      )}
+
+      {page === "not-found" &&
+        cmsConfigLoaded && (
+          <section className="masthead">
+            <div className="wrap">
+              <div className="crumb">
+                Haseeb.dev / 404
+              </div>
+              <h1>Page not found.</h1>
+              <p>
+                This page does not exist or is not
+                published.
+              </p>
+              <button
+                type="button"
+                className="btn btn-grad"
+                onClick={() =>
+                  navigateTo("home", "page")
+                }
+              >
+                Back to Home{" "}
+                <ArrowRight size={14} />
+              </button>
+            </div>
+          </section>
+        )}
       </main>
 
       <ProjectCaseStudy project={selectedProject} onClose={() => setSelectedProject(null)} onContact={goToContact} />

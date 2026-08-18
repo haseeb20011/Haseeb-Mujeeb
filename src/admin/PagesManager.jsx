@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   CheckCircle2,
   CircleDashed,
@@ -17,6 +17,103 @@ import {
 } from "lucide-react";
 
 import "./PagesManager.css";
+
+const API_URL =
+  import.meta.env.VITE_API_URL ||
+  (import.meta.env.PROD ? "" : "http://localhost:5000");
+
+const fetchJson = async (path, options = {}) => {
+  const response = await fetch(`${API_URL}${path}`, {
+    credentials: "include",
+    headers: {
+      Accept: "application/json",
+      ...(options.body
+        ? { "Content-Type": "application/json" }
+        : {}),
+      ...(options.headers || {}),
+    },
+    ...options,
+  });
+
+  const data = await response.json().catch(() => ({}));
+
+  if (!response.ok || data.success === false) {
+    throw new Error(
+      data.message ||
+        "The page request could not be completed."
+    );
+  }
+
+  return data;
+};
+
+const formatPageDate = (value) => {
+  if (!value) return "Recently";
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "Recently";
+
+  const now = new Date();
+  const diffMinutes = Math.floor(
+    Math.max(0, now.getTime() - date.getTime()) / 60000
+  );
+
+  if (diffMinutes < 1) return "Just now";
+  if (diffMinutes < 60) return `${diffMinutes} min ago`;
+
+  const diffHours = Math.floor(diffMinutes / 60);
+  if (diffHours < 24) {
+    return `${diffHours} hr${diffHours === 1 ? "" : "s"} ago`;
+  }
+
+  return new Intl.DateTimeFormat(undefined, {
+    month: "short",
+    day: "numeric",
+  }).format(date);
+};
+
+const normalizeStoredPage = (page, index = 0) => {
+  const content =
+    page?.content && typeof page.content === "object"
+      ? page.content
+      : {};
+
+  const builderSections =
+    content.builderDraft ||
+    content.builderPublished ||
+    {};
+
+  return {
+    id: String(page?.key || page?.id || ""),
+    key: String(page?.key || page?.id || ""),
+    title: page?.title || "Untitled Page",
+    slug: page?.slug || "/",
+    status:
+      page?.status === "draft" ? "draft" : "published",
+    sections: Object.keys(builderSections).length,
+    template: page?.template || "Standard Page",
+    updatedAt: formatPageDate(page?.updatedAt),
+    updatedAtRaw: page?.updatedAt || null,
+    inNavigation: page?.inNavigation !== false,
+    content,
+    tone: pageTones[index % pageTones.length],
+  };
+};
+
+const toStoredPage = (page) => ({
+  key: page.key || page.id,
+  title: page.title,
+  slug: page.slug,
+  status: page.status,
+  template: page.template,
+  inNavigation: page.inNavigation !== false,
+  content:
+    page.content && typeof page.content === "object"
+      ? page.content
+      : {},
+  updatedAt:
+    page.updatedAtRaw || new Date().toISOString(),
+});
 
 const initialPages = [
   {
@@ -88,7 +185,7 @@ const protectedPageIds = [
   "home",
   "about",
   "services",
-  "portfolio",
+  "projects",
   "contact",
 ];
 
@@ -105,7 +202,7 @@ const getNextTone = (currentLength) =>
 export default function PagesManager({
   onEditPage = () => {},
 }) {
-  const [pages, setPages] = useState(initialPages);
+  const [pages, setPages] = useState([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] =
     useState("all");
@@ -119,6 +216,62 @@ export default function PagesManager({
     template: "Standard Page",
     status: "draft",
   });
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadPages = async () => {
+      try {
+        const data = await fetchJson("/api/site-config");
+        const storedPages = Array.isArray(data.config?.pages)
+          ? data.config.pages
+          : [];
+
+        if (!cancelled) {
+          setPages(
+            storedPages.map((page, index) =>
+              normalizeStoredPage(page, index)
+            )
+          );
+        }
+      } catch (error) {
+        console.error("Unable to load CMS pages:", error);
+        if (!cancelled) {
+          window.alert(
+            error instanceof Error
+              ? error.message
+              : "Unable to load website pages."
+          );
+        }
+      }
+    };
+
+    loadPages();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const persistPages = async (nextPages) => {
+    const data = await fetchJson("/api/site-config/pages", {
+      method: "PUT",
+      body: JSON.stringify({
+        pages: nextPages.map(toStoredPage),
+      }),
+    });
+
+    const storedPages = Array.isArray(data.pages)
+      ? data.pages
+      : [];
+
+    const normalized = storedPages.map((page, index) =>
+      normalizeStoredPage(page, index)
+    );
+
+    setPages(normalized);
+    return normalized;
+  };
 
   const filteredPages = useMemo(() => {
     const normalizedQuery = searchQuery
@@ -189,7 +342,7 @@ export default function PagesManager({
     }));
   };
 
-  const handleCreatePage = (event) => {
+  const handleCreatePage = async (event) => {
     event.preventDefault();
 
     const title = newPage.title.trim();
@@ -203,50 +356,95 @@ export default function PagesManager({
       ? slugValue
       : `/${slugValue}`;
 
+    if (
+      pages.some(
+        (item) =>
+          String(item.slug).toLowerCase() ===
+          normalizedSlug.toLowerCase()
+      )
+    ) {
+      window.alert("A page with this URL already exists.");
+      return;
+    }
+
+    const keyBase =
+      slugify(normalizedSlug.replace(/^\//, "")) ||
+      slugify(title) ||
+      "page";
+
     const page = {
-      id: `${slugify(title)}-${Date.now()}`,
+      id: `${keyBase}-${Date.now()}`,
+      key: `${keyBase}-${Date.now()}`,
       title,
       slug: normalizedSlug,
       status: newPage.status,
       sections: 0,
       template: newPage.template,
       updatedAt: "Just now",
+      updatedAtRaw: new Date().toISOString(),
       inNavigation: false,
+      content: {},
       tone: getNextTone(pages.length),
     };
 
-    setPages((current) => [...current, page]);
-    closeCreateModal();
-    onEditPage(page);
+    try {
+      const nextPages = [...pages, page];
+      const savedPages = await persistPages(nextPages);
+      const savedPage =
+        savedPages.find((item) => item.key === page.key) ||
+        savedPages[savedPages.length - 1];
+
+      closeCreateModal();
+
+      if (savedPage) {
+        onEditPage(savedPage);
+      }
+    } catch (error) {
+      window.alert(
+        error instanceof Error
+          ? error.message
+          : "Unable to create the page."
+      );
+    }
   };
 
-  const handleDuplicatePage = (page) => {
+  const handleDuplicatePage = async (page) => {
+    const suffix = Date.now().toString(36);
+
     const duplicatedPage = {
       ...page,
-      id: `${page.id}-copy-${Date.now()}`,
+      id: `${page.id}-copy-${suffix}`,
+      key: `${page.key || page.id}-copy-${suffix}`,
       title: `${page.title} Copy`,
       slug:
         page.slug === "/"
-          ? "/home-copy"
-          : `${page.slug}-copy`,
+          ? `/home-copy-${suffix}`
+          : `${page.slug}-copy-${suffix}`,
       status: "draft",
       updatedAt: "Just now",
+      updatedAtRaw: new Date().toISOString(),
       inNavigation: false,
       tone: getNextTone(pages.length),
     };
 
-    setPages((current) => [
-      ...current,
-      duplicatedPage,
-    ]);
+    try {
+      await persistPages([...pages, duplicatedPage]);
+    } catch (error) {
+      window.alert(
+        error instanceof Error
+          ? error.message
+          : "Unable to duplicate the page."
+      );
+    }
   };
 
-  const handleDeletePage = (page) => {
-    if (protectedPageIds.includes(page.id)) {
+  const handleDeletePage = async (page) => {
+    if (
+      protectedPageIds.includes(page.key || page.id)
+    ) {
       window.alert(
         "This is a core website page. It can be unpublished later, but it should not be permanently deleted."
       );
-
       return;
     }
 
@@ -254,11 +452,21 @@ export default function PagesManager({
       `Delete "${page.title}" permanently?`
     );
 
-    if (confirmed) {
-      setPages((current) =>
-        current.filter(
+    if (!confirmed) {
+      return;
+    }
+
+    try {
+      await persistPages(
+        pages.filter(
           (item) => item.id !== page.id
         )
+      );
+    } catch (error) {
+      window.alert(
+        error instanceof Error
+          ? error.message
+          : "Unable to delete the page."
       );
     }
   };
@@ -490,7 +698,7 @@ export default function PagesManager({
                 </button>
 
                 <a
-                  href={page.slug}
+                  href={page.status === "draft" ? `${page.slug}?cmsPreview=1` : page.slug}
                   target="_blank"
                   rel="noreferrer"
                   title="Preview page"
