@@ -18,6 +18,15 @@ const getConfigOrCreate = async () => {
   return SiteConfig.getMainConfig();
 };
 
+const normalizePublicPath = (value = "/") => {
+  const path = String(value || "/")
+    .trim()
+    .toLowerCase()
+    .replace(/\/+$/, "");
+
+  return path || "/";
+};
+
 const getPublicSiteConfig = async (
   req,
   res,
@@ -32,10 +41,25 @@ const getPublicSiteConfig = async (
       (page) => page.status === "published"
     );
 
+    const publishedPagePaths = new Set(
+      publishedPages.map((page) =>
+        normalizePublicPath(page.slug)
+      )
+    );
+
     const navigation = (
       config.navigation || []
     )
       .filter((item) => item.enabled !== false)
+      .filter((item) => {
+        if (item.type !== "page") {
+          return true;
+        }
+
+        return publishedPagePaths.has(
+          normalizePublicPath(item.url)
+        );
+      })
       .sort(
         (a, b) =>
           Number(a.order || 0) -

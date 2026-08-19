@@ -7,9 +7,10 @@ import {
 } from "react";
 import {
   ArrowLeft,
-  ChevronDown,
+  Check,
   ChevronRight,
   Eye,
+  Image as ImageIcon,
   Layers3,
   Monitor,
   Paintbrush,
@@ -21,6 +22,14 @@ import {
   Tablet,
   Type,
 } from "lucide-react";
+
+import { getPageSchema } from "./pageSchemas.js";
+import MediaPickerModal from "./MediaPickerModal.jsx";
+import {
+  applyCmsStateToDocument,
+  createEmptyCmsEdit,
+  getCmsTargets,
+} from "../cmsRuntime.js";
 
 import "./PageBuilder.css";
 
@@ -34,160 +43,154 @@ const DEVICE_WIDTH = {
   mobile: "390px",
 };
 
-const slugify = (value = "") =>
-  value
-    .toLowerCase()
-    .trim()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "");
+const wait = (ms) =>
+  new Promise((resolve) => window.setTimeout(resolve, ms));
 
-const sectionLabel = (element, index) => {
-  const classes = Array.from(element.classList);
-  const known = [
-    ["hero", "Hero"],
-    ["masthead", "Page Header"],
-    ["about-profile", "About Profile"],
-    ["about-values", "Values"],
-    ["about-journey", "Journey"],
-    ["about-principles", "Principles"],
-    ["about-details", "About Details"],
-    ["about-final-cta", "Final Call to Action"],
-    ["about", "About"],
-    ["projects-page", "Projects Archive"],
-    ["projects", "Featured Projects"],
-    ["delivery", "Delivery Standards"],
-    ["process", "Process"],
-    ["opportunity", "Contact & Opportunities"],
-    ["cta-banner", "Call to Action"],
-    ["contact", "Contact"],
-  ];
+const mergeEdit = (saved, captured, meta) => {
+  const empty = createEmptyCmsEdit();
+  const savedObject =
+    saved && typeof saved === "object" ? saved : {};
+  const savedMeta =
+    savedObject.meta && typeof savedObject.meta === "object"
+      ? savedObject.meta
+      : {};
 
-  for (const [className, label] of known) {
-    if (classes.includes(className)) return label;
-  }
-
-  return (
-    element.querySelector("h1, h2, h3")?.textContent?.trim().slice(0, 48) ||
-    `Section ${index + 1}`
+  // Older builder drafts stored an empty string for every possible field.
+  // Those placeholders must not hide real text captured from the page.
+  // From schema v3 onward, an intentionally-cleared field is recorded in
+  // meta.touchedContent, so an explicit blank remains authoritative.
+  const touchedContent = new Set(
+    Array.isArray(savedMeta.touchedContent)
+      ? savedMeta.touchedContent
+      : []
   );
-};
 
-const sectionKey = (element, index) => {
-  if (element.id) return element.id;
-  const usefulClass = Array.from(element.classList).find(
-    (name) => !["sec", "rv", "rv--in"].includes(name)
+  const savedContent = Object.fromEntries(
+    Object.entries(savedObject.content || {}).filter(
+      ([field, value]) =>
+        touchedContent.has(field) ||
+        typeof value !== "string" ||
+        value.trim() !== ""
+    )
   );
-  return `${usefulClass || "section"}-${index}-${slugify(
-    sectionLabel(element, index)
-  )}`;
-};
 
-const targetsFor = (section) => {
-  const buttons = Array.from(
-    section.querySelectorAll("button.btn, a.btn, .nav-cta")
-  );
+  const hasBuilderMetadata =
+    savedMeta.kind === "section" || savedMeta.kind === "block";
+
+  const savedStyle =
+    hasBuilderMetadata || savedObject?.style?.enabled
+      ? savedObject.style || {}
+      : {};
+
+  const savedAdvanced =
+    hasBuilderMetadata || savedObject?.advanced?.enabled
+      ? savedObject.advanced || {}
+      : {};
 
   return {
-    eyebrow: section.querySelector(
-      ".hi-badge, .eyebrow2, .crumb, [class*='eyebrow']"
-    ),
-    heading: section.querySelector("h1, h2"),
-    description: section.querySelector(
-      "p.lead, .sec-head p, .about-copy p, .opportunity-copy p, .masthead p, p"
-    ),
-    primaryButton: buttons[0] || null,
-    secondaryButton: buttons[1] || null,
+    ...empty,
+    ...captured,
+    ...savedObject,
+    meta: {
+      ...(captured?.meta || {}),
+      ...savedMeta,
+      ...meta,
+      touchedContent: Array.from(touchedContent),
+      schemaVersion: 3,
+    },
+    content: {
+      ...empty.content,
+      ...(captured?.content || {}),
+      ...savedContent,
+    },
+    style: {
+      ...empty.style,
+      ...(captured?.style || {}),
+      ...savedStyle,
+    },
+    advanced: {
+      ...empty.advanced,
+      ...(captured?.advanced || {}),
+      ...savedAdvanced,
+    },
   };
 };
 
-const emptyEdit = () => ({
-  content: {
-    eyebrow: "",
-    heading: "",
-    description: "",
-    primaryButton: "",
-    secondaryButton: "",
-  },
-  style: {
-    enabled: false,
-    background: "",
-    text: "",
-    heading: "",
-    align: "",
-  },
-  advanced: {
-    enabled: false,
-    desktopTop: "",
-    desktopBottom: "",
-    mobileTop: "",
-    mobileBottom: "",
-    hideDesktop: false,
-    hideTablet: false,
-    hideMobile: false,
-  },
-});
-
-const captureEdit = (section) => {
-  const targets = targetsFor(section);
-  const edit = emptyEdit();
-
-  Object.keys(edit.content).forEach((field) => {
-    edit.content[field] = targets[field]?.textContent?.trim() || "";
-  });
-
-  return edit;
-};
+const formatSaveTime = () =>
+  new Intl.DateTimeFormat(undefined, {
+    hour: "numeric",
+    minute: "2-digit",
+  }).format(new Date());
 
 export default function PageBuilder({ page, onBack }) {
   const iframeRef = useRef(null);
   const iframeDocumentRef = useRef(null);
-  const elementsRef = useRef(new Map());
-  const observerRef = useRef(null);
-  const applyingRef = useRef(false);
-  const draftRef = useRef({});
+  const targetElementsRef = useRef(new Map());
+  const targetInfoRef = useRef(new Map());
   const clickCleanupRef = useRef(null);
+  const draftRef = useRef({});
   const pageContentRef = useRef(page.content || {});
-  const lastSavedDraftRef = useRef(
-    page.content?.builderDraft || page.content?.builderPublished || {}
+  const savedDraftRef = useRef(
+    page.content?.builderDraft ||
+      page.content?.builderPublished ||
+      {}
   );
+  const initialHydrationRef = useRef(false);
 
   const pageKey =
     page.key || (page.id === "portfolio" ? "projects" : page.id);
 
-  const initialDraft = useMemo(
-    () => page.content?.builderDraft || page.content?.builderPublished || {},
-    [page.content]
+  const [draft, setDraft] = useState(
+    page.content?.builderDraft ||
+      page.content?.builderPublished ||
+      {}
   );
-
-  const [draft, setDraft] = useState(initialDraft);
-  const [sections, setSections] = useState([]);
+  const [navigator, setNavigator] = useState([]);
   const [selectedKey, setSelectedKey] = useState(null);
   const [tab, setTab] = useState("content");
   const [device, setDevice] = useState("desktop");
   const [message, setMessage] = useState("");
+  const [messageTone, setMessageTone] = useState("neutral");
   const [ready, setReady] = useState(false);
-  const [isSaving, setIsSaving] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+  const [isSaving, setIsSaving] = useState(false);
+  const [lastSavedAt, setLastSavedAt] = useState("");
+  const [mediaOpen, setMediaOpen] = useState(false);
+
+  const hasUnsavedChanges = useMemo(
+    () =>
+      JSON.stringify(draft) !==
+      JSON.stringify(savedDraftRef.current || {}),
+    [draft]
+  );
 
   useEffect(() => {
     draftRef.current = draft;
   }, [draft]);
 
+  const setNotice = (text, tone = "neutral") => {
+    setMessage(text);
+    setMessageTone(tone);
+  };
+
   useEffect(() => {
     let cancelled = false;
 
-    const loadPageBuilderData = async () => {
+    const load = async () => {
       setIsLoading(true);
 
       try {
         const response = await fetch(`${API_URL}/api/site-config`, {
           credentials: "include",
+          headers: { Accept: "application/json" },
         });
 
         const data = await response.json().catch(() => ({}));
 
         if (!response.ok || data.success === false) {
-          throw new Error(data.message || "Page builder data could not be loaded.");
+          throw new Error(
+            data.message || "Page builder data could not be loaded."
+          );
         }
 
         const savedPage = (data.config?.pages || []).find(
@@ -195,32 +198,37 @@ export default function PageBuilder({ page, onBack }) {
         );
 
         if (!savedPage) {
-          throw new Error("This page was not found in the CMS database.");
+          throw new Error(
+            "This page could not be found in the CMS database."
+          );
         }
 
         const content =
-          savedPage.content && typeof savedPage.content === "object"
+          savedPage.content &&
+          typeof savedPage.content === "object"
             ? savedPage.content
             : {};
 
         const savedDraft =
-          content.builderDraft || content.builderPublished || {};
+          content.builderDraft ||
+          content.builderPublished ||
+          {};
 
         if (!cancelled) {
           pageContentRef.current = content;
-          lastSavedDraftRef.current = savedDraft;
+          savedDraftRef.current = savedDraft;
           draftRef.current = savedDraft;
+          initialHydrationRef.current = false;
           setDraft(savedDraft);
-          setMessage("");
+          setNotice("");
         }
       } catch (error) {
-        console.error("Failed to load page builder data:", error);
-
         if (!cancelled) {
-          setMessage(
+          setNotice(
             error instanceof Error
               ? error.message
-              : "Page builder data could not be loaded."
+              : "Page builder data could not be loaded.",
+            "error"
           );
         }
       } finally {
@@ -228,27 +236,48 @@ export default function PageBuilder({ page, onBack }) {
       }
     };
 
-    loadPageBuilderData();
+    load();
 
     return () => {
       cancelled = true;
     };
   }, [pageKey]);
 
-  const selected = sections.find((item) => item.key === selectedKey);
-  const selectedEdit = selectedKey
-    ? draft[selectedKey] || emptyEdit()
-    : emptyEdit();
+  const selectedTarget =
+    targetInfoRef.current.get(selectedKey) || null;
 
-  const changeSelected = (area, field, value) => {
+  const selectedEdit = selectedKey
+    ? draft[selectedKey] || createEmptyCmsEdit()
+    : createEmptyCmsEdit();
+
+  const updateSelected = (area, field, value) => {
     if (!selectedKey) return;
 
     setDraft((current) => {
-      const currentEdit = current[selectedKey] || emptyEdit();
+      const currentEdit =
+        current[selectedKey] || createEmptyCmsEdit();
+
       return {
         ...current,
         [selectedKey]: {
           ...currentEdit,
+          meta:
+            area === "content"
+              ? {
+                  ...(currentEdit.meta || {}),
+                  touchedContent: Array.from(
+                    new Set([
+                      ...(Array.isArray(
+                        currentEdit.meta?.touchedContent
+                      )
+                        ? currentEdit.meta.touchedContent
+                        : []),
+                      field,
+                    ])
+                  ),
+                  schemaVersion: 3,
+                }
+              : currentEdit.meta,
           [area]: {
             ...currentEdit[area],
             [field]: value,
@@ -257,93 +286,163 @@ export default function PageBuilder({ page, onBack }) {
       };
     });
 
-    setMessage("");
+    setNotice("");
   };
 
   const applyDraft = useCallback(
-    (value = draftRef.current) => {
-      if (!iframeDocumentRef.current || applyingRef.current) return;
+    (nextDraft = draftRef.current) => {
+      const doc = iframeDocumentRef.current;
+      if (!doc) return;
 
-      applyingRef.current = true;
+      applyCmsStateToDocument(doc, nextDraft, device);
 
-      try {
-        elementsRef.current.forEach((section, key) => {
-          const edit = value[key];
-          if (!edit) return;
-
-          const targets = targetsFor(section);
-          Object.entries(edit.content || {}).forEach(([field, text]) => {
-            if (targets[field]) targets[field].textContent = text;
-          });
-
-          section.style.removeProperty("background-color");
-          section.style.removeProperty("color");
-          section.style.removeProperty("text-align");
-          section.style.removeProperty("padding-top");
-          section.style.removeProperty("padding-bottom");
-
-          const heading = section.querySelector("h1, h2");
-          heading?.style.removeProperty("color");
-
-          if (edit.style?.enabled) {
-            if (edit.style.background)
-              section.style.backgroundColor = edit.style.background;
-            if (edit.style.text) section.style.color = edit.style.text;
-            if (edit.style.heading && heading)
-              heading.style.color = edit.style.heading;
-            if (edit.style.align) section.style.textAlign = edit.style.align;
-          }
-
-          if (edit.advanced?.enabled) {
-            const mobile = device === "mobile";
-            const top = mobile
-              ? edit.advanced.mobileTop
-              : edit.advanced.desktopTop;
-            const bottom = mobile
-              ? edit.advanced.mobileBottom
-              : edit.advanced.desktopBottom;
-
-            if (top !== "") section.style.paddingTop = `${Number(top)}px`;
-            if (bottom !== "")
-              section.style.paddingBottom = `${Number(bottom)}px`;
-          }
-
-          const hidden =
-            (device === "desktop" && edit.advanced?.hideDesktop) ||
-            (device === "tablet" && edit.advanced?.hideTablet) ||
-            (device === "mobile" && edit.advanced?.hideMobile);
-
-          section.dataset.cmsHidden = hidden ? "true" : "false";
+      doc
+        .querySelectorAll("[data-cms-selected='true']")
+        .forEach((node) => {
+          node.dataset.cmsSelected = "false";
         });
-      } finally {
-        applyingRef.current = false;
+
+      const selectedElement =
+        targetElementsRef.current.get(selectedKey);
+
+      if (selectedElement) {
+        selectedElement.dataset.cmsSelected = "true";
       }
     },
-    [device]
+    [device, selectedKey]
   );
 
   useEffect(() => {
     applyDraft(draft);
   }, [draft, device, applyDraft]);
 
-  const selectSection = useCallback((key, scroll = true) => {
-    const doc = iframeDocumentRef.current;
-    if (!doc) return;
+  const selectTarget = useCallback(
+    (key, shouldScroll = true) => {
+      const doc = iframeDocumentRef.current;
+      if (!doc) return;
 
-    doc.querySelectorAll("[data-cms-selected='true']").forEach((node) => {
-      node.dataset.cmsSelected = "false";
-    });
+      doc
+        .querySelectorAll("[data-cms-selected='true']")
+        .forEach((node) => {
+          node.dataset.cmsSelected = "false";
+        });
 
-    const element = elementsRef.current.get(key);
-    if (element) {
-      element.dataset.cmsSelected = "true";
-      if (scroll) {
-        element.scrollIntoView({ behavior: "smooth", block: "center" });
+      const element = targetElementsRef.current.get(key);
+
+      if (element) {
+        element.dataset.cmsSelected = "true";
+
+        if (shouldScroll) {
+          element.scrollIntoView({
+            behavior: "smooth",
+            block: "center",
+          });
+        }
       }
-    }
 
-    setSelectedKey(key);
-  }, []);
+      setSelectedKey(key);
+      setTab("content");
+    },
+    []
+  );
+
+  const buildNavigator = useCallback(
+    async (doc) => {
+      const schema = getPageSchema(page);
+      let discovered = [];
+
+      for (let attempt = 0; attempt < 50; attempt += 1) {
+        discovered = getCmsTargets(doc, schema);
+
+        if (discovered.length > 0) break;
+        await wait(100);
+      }
+
+      if (discovered.length === 0) {
+        throw new Error(
+          "No editable page sections were found in the live preview."
+        );
+      }
+
+      targetElementsRef.current.clear();
+      targetInfoRef.current.clear();
+
+      doc.querySelectorAll("[data-cms-target-key]").forEach((node) => {
+        delete node.dataset.cmsTargetKey;
+        delete node.dataset.cmsTargetLabel;
+        delete node.dataset.cmsSelected;
+      });
+
+      const grouped = [];
+      const nextDraft = {
+        ...draftRef.current,
+      };
+
+      discovered.forEach((target) => {
+        targetElementsRef.current.set(
+          target.key,
+          target.element
+        );
+        targetInfoRef.current.set(target.key, target);
+
+        target.element.dataset.cmsTargetKey = target.key;
+        target.element.dataset.cmsTargetLabel = target.label;
+        target.element.dataset.cmsSelected = "false";
+
+        nextDraft[target.key] = mergeEdit(
+          nextDraft[target.key],
+          target.captured,
+          target.meta
+        );
+
+        if (target.kind === "section") {
+          grouped.push({
+            key: target.key,
+            label: target.label,
+            children: [],
+          });
+        } else {
+          const parent = grouped.find(
+            (item) => item.key === target.parentKey
+          );
+
+          if (parent) {
+            parent.children.push({
+              key: target.key,
+              label: target.label,
+            });
+          }
+        }
+      });
+
+      draftRef.current = nextDraft;
+      setDraft(nextDraft);
+      setNavigator(grouped);
+
+      // Hydration/migration is a clean baseline, not a user edit. This also
+      // upgrades legacy drafts in memory without showing a false unsaved state.
+      if (!initialHydrationRef.current) {
+        savedDraftRef.current = nextDraft;
+        initialHydrationRef.current = true;
+      }
+
+      const nextSelected =
+        selectedKey &&
+        targetInfoRef.current.has(selectedKey)
+          ? selectedKey
+          : grouped[0]?.key;
+
+      if (nextSelected) {
+        window.setTimeout(
+          () => selectTarget(nextSelected, false),
+          60
+        );
+      }
+
+      return nextDraft;
+    },
+    [page, selectTarget, selectedKey]
+  );
 
   const preparePreview = useCallback(async () => {
     const iframe = iframeRef.current;
@@ -355,229 +454,129 @@ export default function PageBuilder({ page, onBack }) {
     }
 
     iframeDocumentRef.current = doc;
-    observerRef.current?.disconnect();
     clickCleanupRef.current?.();
 
-    /*
-     * The iframe load event can fire before React has finished
-     * rendering App.jsx. Wait until the real page sections exist
-     * before setting up the editor.
-     */
-    let pageSections = [];
-
-    for (let attempt = 0; attempt < 60; attempt += 1) {
-      pageSections = Array.from(
-        doc.querySelectorAll(
-          "main#main-content.main-content > section, main.main-content > section"
-        )
+    try {
+      let editorStyle = doc.getElementById(
+        "haseeb-cms-builder-preview-style"
       );
 
-      if (pageSections.length > 0) {
-        break;
+      if (!editorStyle) {
+        editorStyle = doc.createElement("style");
+        editorStyle.id =
+          "haseeb-cms-builder-preview-style";
+        editorStyle.textContent = `
+          [data-cms-target-key] {
+            position: relative !important;
+            outline: 2px solid transparent !important;
+            outline-offset: -2px !important;
+          }
+          [data-cms-target-key]:hover {
+            outline-color: rgba(124, 58, 237, .72) !important;
+            cursor: pointer !important;
+          }
+          [data-cms-selected="true"] {
+            outline: 3px solid #7c3aed !important;
+            outline-offset: -3px !important;
+          }
+          [data-cms-selected="true"]::before {
+            content: attr(data-cms-target-label);
+            position: absolute !important;
+            z-index: 99999 !important;
+            top: 10px !important;
+            left: 10px !important;
+            display: inline-flex !important;
+            align-items: center !important;
+            min-height: 28px !important;
+            padding: 0 10px !important;
+            border-radius: 8px !important;
+            color: #ffffff !important;
+            background: #7c3aed !important;
+            box-shadow: 0 8px 22px rgba(39, 24, 97, .24) !important;
+            font: 700 11px/1 Arial, sans-serif !important;
+            pointer-events: none !important;
+          }
+          a, button, input, textarea, select {
+            pointer-events: none !important;
+          }
+        `;
+        doc.head.appendChild(editorStyle);
       }
 
-      await new Promise((resolve) =>
-        window.setTimeout(resolve, 100)
-      );
-    }
+      const nextDraft = await buildNavigator(doc);
+      applyCmsStateToDocument(doc, nextDraft, device);
 
-    if (pageSections.length === 0) {
-      setReady(false);
-      setMessage(
-        "The real page loaded, but its editable sections were not found. Press Reload once."
-      );
-      return;
-    }
+      const clickHandler = (event) => {
+        const ElementCtor = doc.defaultView?.Element;
+        const target =
+          ElementCtor &&
+          event.target instanceof ElementCtor
+            ? event.target
+            : event.target?.parentElement;
 
-    let style = doc.getElementById(
-      "portfolio-cms-editor-style"
-    );
-
-    if (!style) {
-      style = doc.createElement("style");
-      style.id = "portfolio-cms-editor-style";
-
-      style.textContent = `
-        main.main-content > section[data-cms-section='true'] {
-          position: relative !important;
-          outline: 2px solid transparent !important;
-          outline-offset: -2px !important;
-        }
-
-        main.main-content > section[data-cms-section='true']:hover {
-          outline-color: rgba(37, 99, 235, .72) !important;
-          cursor: pointer !important;
-        }
-
-        main.main-content > section[data-cms-selected='true'] {
-          outline: 3px solid #2563eb !important;
-          outline-offset: -3px !important;
-        }
-
-        main.main-content > section[data-cms-selected='true']::before {
-          content: attr(data-cms-label);
-          position: absolute;
-          z-index: 99999;
-          top: 10px;
-          left: 10px;
-          padding: 6px 10px;
-          border-radius: 6px;
-          color: white;
-          background: #2563eb;
-          font: 700 11px/1 Arial, sans-serif;
-          pointer-events: none;
-        }
-
-        main.main-content > section[data-cms-hidden='true'] {
-          display: none !important;
-        }
-
-        a,
-        button,
-        input,
-        textarea,
-        select {
-          pointer-events: none !important;
-        }
-      `;
-
-      doc.head.appendChild(style);
-    }
-
-    elementsRef.current.clear();
-
-    const found = pageSections.map((element, index) => {
-      const key = sectionKey(element, index);
-      const label = sectionLabel(element, index);
-
-      element.dataset.cmsSection = "true";
-      element.dataset.cmsSelected = "false";
-      element.dataset.cmsSectionKey = key;
-      element.dataset.cmsLabel = label;
-
-      elementsRef.current.set(key, element);
-
-      return {
-        key,
-        label,
-      };
-    });
-
-    const nextDraft = {
-      ...draftRef.current,
-    };
-
-    found.forEach(({ key }) => {
-      if (!nextDraft[key]) {
-        nextDraft[key] = captureEdit(
-          elementsRef.current.get(key)
+        const editable = target?.closest(
+          "[data-cms-target-key]"
         );
-      }
-    });
 
-    draftRef.current = nextDraft;
-    setDraft(nextDraft);
-    setSections(found);
-    setReady(true);
-    setMessage("");
+        if (!editable) return;
 
-    const clickHandler = (event) => {
-      const EventElement =
-        doc.defaultView?.Element;
+        event.preventDefault();
+        event.stopPropagation();
 
-      const target =
-        EventElement &&
-        event.target instanceof EventElement
-          ? event.target
-          : event.target?.parentElement;
+        selectTarget(
+          editable.dataset.cmsTargetKey,
+          false
+        );
+      };
 
-      const section = target?.closest(
-        "main.main-content > section[data-cms-section='true']"
-      );
-
-      if (!section) {
-        return;
-      }
-
-      event.preventDefault();
-      event.stopPropagation();
-
-      selectSection(
-        section.dataset.cmsSectionKey,
-        false
-      );
-    };
-
-    doc.addEventListener(
-      "pointerdown",
-      clickHandler,
-      true
-    );
-
-    doc.addEventListener(
-      "click",
-      clickHandler,
-      true
-    );
-
-    clickCleanupRef.current = () => {
-      doc.removeEventListener(
+      doc.addEventListener(
         "pointerdown",
         clickHandler,
         true
       );
+      doc.addEventListener("click", clickHandler, true);
 
-      doc.removeEventListener(
-        "click",
-        clickHandler,
-        true
+      clickCleanupRef.current = () => {
+        doc.removeEventListener(
+          "pointerdown",
+          clickHandler,
+          true
+        );
+        doc.removeEventListener(
+          "click",
+          clickHandler,
+          true
+        );
+      };
+
+      setReady(true);
+      setNotice("");
+    } catch (error) {
+      setReady(false);
+      setNotice(
+        error instanceof Error
+          ? error.message
+          : "The page preview could not be prepared.",
+        "error"
       );
-    };
-
-    let scheduled = false;
-
-    observerRef.current = new MutationObserver(() => {
-      if (applyingRef.current || scheduled) {
-        return;
-      }
-
-      scheduled = true;
-
-      window.requestAnimationFrame(() => {
-        scheduled = false;
-        applyDraft();
-      });
-    });
-
-    observerRef.current.observe(doc.body, {
-      subtree: true,
-      childList: true,
-      characterData: true,
-    });
-
-    applyDraft(nextDraft);
-
-    const firstKey =
-      selectedKey || found[0]?.key;
-
-    if (firstKey) {
-      window.setTimeout(() => {
-        selectSection(firstKey, false);
-      }, 80);
     }
-  }, [applyDraft, selectSection, selectedKey]);
+  }, [buildNavigator, device, selectTarget]);
 
   useEffect(
     () => () => {
-      observerRef.current?.disconnect();
       clickCleanupRef.current?.();
     },
     []
   );
 
-  const savePageContent = async (nextContent, extra = {}) => {
+  const savePageContent = async (
+    nextContent,
+    extra = {}
+  ) => {
     const response = await fetch(
-      `${API_URL}/api/site-config/pages/${encodeURIComponent(pageKey)}`,
+      `${API_URL}/api/site-config/pages/${encodeURIComponent(
+        pageKey
+      )}`,
       {
         method: "PUT",
         credentials: "include",
@@ -595,7 +594,10 @@ export default function PageBuilder({ page, onBack }) {
     const data = await response.json().catch(() => ({}));
 
     if (!response.ok || data.success === false) {
-      throw new Error(data.message || "Page builder changes could not be saved.");
+      throw new Error(
+        data.message ||
+          "Page builder changes could not be saved."
+      );
     }
 
     return data.page;
@@ -605,7 +607,7 @@ export default function PageBuilder({ page, onBack }) {
     if (isSaving || isLoading) return;
 
     setIsSaving(true);
-    setMessage("Saving draft...");
+    setNotice("Saving draft...");
 
     try {
       const nextContent = {
@@ -616,16 +618,19 @@ export default function PageBuilder({ page, onBack }) {
       await savePageContent(nextContent);
 
       pageContentRef.current = nextContent;
-      lastSavedDraftRef.current = draft;
+      savedDraftRef.current = draft;
+      setLastSavedAt(formatSaveTime());
 
-      setMessage(
-        "Draft saved to MongoDB. The public website has not changed."
+      setNotice(
+        "Draft saved. The live website has not changed.",
+        "success"
       );
     } catch (error) {
-      setMessage(
+      setNotice(
         error instanceof Error
           ? error.message
-          : "Draft could not be saved."
+          : "Draft could not be saved.",
+        "error"
       );
     } finally {
       setIsSaving(false);
@@ -636,7 +641,7 @@ export default function PageBuilder({ page, onBack }) {
     if (isSaving || isLoading) return;
 
     setIsSaving(true);
-    setMessage("Publishing changes...");
+    setNotice("Publishing page...");
 
     try {
       const nextContent = {
@@ -650,25 +655,19 @@ export default function PageBuilder({ page, onBack }) {
       });
 
       pageContentRef.current = nextContent;
-      lastSavedDraftRef.current = draft;
+      savedDraftRef.current = draft;
+      setLastSavedAt(formatSaveTime());
 
-      window.dispatchEvent(
-        new CustomEvent("portfolio-cms:page-published", {
-          detail: {
-            pageKey,
-            content: nextContent,
-          },
-        })
-      );
-
-      setMessage(
-        "Published successfully. These changes are now stored as the live page version."
+      setNotice(
+        "Published successfully. The live page now uses these settings.",
+        "success"
       );
     } catch (error) {
-      setMessage(
+      setNotice(
         error instanceof Error
           ? error.message
-          : "Page could not be published."
+          : "Page could not be published.",
+        "error"
       );
     } finally {
       setIsSaving(false);
@@ -676,229 +675,522 @@ export default function PageBuilder({ page, onBack }) {
   };
 
   const discard = () => {
-    const stored = lastSavedDraftRef.current || {};
+    const stored = savedDraftRef.current || {};
     draftRef.current = stored;
     setDraft(stored);
-    setMessage("Unsaved preview changes discarded.");
-    iframeRef.current?.contentWindow?.location.reload();
+    setNotice("Unsaved changes discarded.");
+    applyCmsStateToDocument(
+      iframeDocumentRef.current,
+      stored,
+      device
+    );
   };
 
+  const imageUrl =
+    selectedEdit.content?.imageUrl || "";
+
   return (
-    <section className="elementor-builder">
-      <header className="elementor-builder__header">
-        <div className="elementor-builder__title">
-          <button type="button" onClick={onBack}>
-            <ArrowLeft size={16} /> Pages
+    <section className="pb-shell">
+      <header className="pb-topbar">
+        <div className="pb-topbar__left">
+          <button
+            type="button"
+            className="pb-back"
+            onClick={onBack}
+          >
+            <ArrowLeft size={16} />
+            Pages
           </button>
-          <div>
-            <span>Visual page builder</span>
+
+          <div className="pb-page-title">
+            <span>Theme editor</span>
             <h1>{page.title}</h1>
-            <p>
-              Editing the real page at <strong>{page.slug}</strong>
-            </p>
+            <p>{page.slug}</p>
           </div>
         </div>
 
-        <div className="elementor-builder__actions">
-          <button type="button" onClick={discard} disabled={isSaving || isLoading}>
-            <RotateCcw size={15} /> Discard
+        <div className="pb-topbar__right">
+          <span
+            className={`pb-save-state ${
+              hasUnsavedChanges
+                ? "is-unsaved"
+                : "is-saved"
+            }`}
+          >
+            <i />
+            {hasUnsavedChanges
+              ? "Unsaved changes"
+              : lastSavedAt
+                ? `Saved ${lastSavedAt}`
+                : "All changes saved"}
+          </span>
+
+          <button
+            type="button"
+            className="pb-action"
+            onClick={discard}
+            disabled={
+              isLoading ||
+              isSaving ||
+              !hasUnsavedChanges
+            }
+          >
+            <RotateCcw size={15} />
+            Discard
           </button>
-          <button type="button" onClick={saveDraft} disabled={isSaving || isLoading}>
-            <Save size={15} /> {isSaving ? "Saving..." : "Save Draft"}
+
+          <button
+            type="button"
+            className="pb-action"
+            onClick={saveDraft}
+            disabled={
+              isLoading ||
+              isSaving ||
+              !hasUnsavedChanges
+            }
+          >
+            <Save size={15} />
+            {isSaving ? "Working..." : "Save draft"}
           </button>
-          <button type="button" className="is-publish" onClick={publish} disabled={isSaving || isLoading}>
+
+          <button
+            type="button"
+            className="pb-publish"
+            onClick={publish}
+            disabled={isLoading || isSaving}
+          >
+            <Check size={15} />
             {isSaving ? "Working..." : "Publish"}
           </button>
         </div>
       </header>
 
-      {message && <div className="elementor-builder__notice">{message}</div>}
+      {message && (
+        <div
+          className={`pb-notice is-${messageTone}`}
+          role={messageTone === "error" ? "alert" : "status"}
+        >
+          {message}
+        </div>
+      )}
 
-      <div className="elementor-builder__workspace">
-        <aside className="elementor-builder__panel">
-          <div className="elementor-builder__panel-heading">
-            <Eye size={17} />
+      <div className="pb-workspace">
+        <aside className="pb-sidebar">
+          <div className="pb-sidebar__header">
             <div>
-              <strong>{selected?.label || "Select a section"}</strong>
-              <span>Click a real section in the preview</span>
+              <span>Page structure</span>
+              <strong>
+                {navigator.length} sections
+              </strong>
             </div>
+
+            <Layers3 size={18} />
           </div>
 
-          <div className="elementor-builder__tabs">
-            {[
-              ["content", Type, "Content"],
-              ["style", Paintbrush, "Style"],
-              ["advanced", Settings2, "Advanced"],
-            ].map(([value, Icon, label]) => (
-              <button
-                type="button"
-                key={value}
-                className={tab === value ? "is-active" : ""}
-                onClick={() => setTab(value)}
+          <div className="pb-nav">
+            {navigator.map((section, index) => (
+              <div
+                className="pb-nav__section"
+                key={section.key}
               >
-                <Icon size={15} /> {label}
-              </button>
+                <button
+                  type="button"
+                  className={`pb-nav__row ${
+                    selectedKey === section.key
+                      ? "is-active"
+                      : ""
+                  }`}
+                  onClick={() =>
+                    selectTarget(section.key)
+                  }
+                >
+                  <span className="pb-nav__index">
+                    {index + 1}
+                  </span>
+                  <strong>{section.label}</strong>
+                  <ChevronRight size={14} />
+                </button>
+
+                {section.children.length > 0 && (
+                  <div className="pb-nav__children">
+                    {section.children.map(
+                      (child) => (
+                        <button
+                          type="button"
+                          key={child.key}
+                          className={
+                            selectedKey === child.key
+                              ? "is-active"
+                              : ""
+                          }
+                          onClick={() =>
+                            selectTarget(child.key)
+                          }
+                        >
+                          <span />
+                          {child.label}
+                        </button>
+                      )
+                    )}
+                  </div>
+                )}
+              </div>
             ))}
           </div>
 
-          <div className="elementor-builder__controls">
-            {!selected && (
-              <div className="elementor-builder__empty">
-                Click any section in the actual website preview.
+          <div className="pb-editor">
+            <div className="pb-editor__heading">
+              <div>
+                <span>
+                  {selectedTarget?.kind === "block"
+                    ? "Block"
+                    : "Section"}
+                </span>
+                <strong>
+                  {selectedTarget?.label ||
+                    "Select a section"}
+                </strong>
               </div>
-            )}
+              <Eye size={16} />
+            </div>
 
-            {selected && tab === "content" && (
-              <>
-                <Group title="Text content">
-                  <Field
-                    label="Eyebrow / label"
-                    value={selectedEdit.content.eyebrow}
-                    onChange={(value) =>
-                      changeSelected("content", "eyebrow", value)
-                    }
-                  />
-                  <Area
-                    label="Heading"
-                    value={selectedEdit.content.heading}
-                    rows={4}
-                    onChange={(value) =>
-                      changeSelected("content", "heading", value)
-                    }
-                  />
-                  <Area
-                    label="Description"
-                    value={selectedEdit.content.description}
-                    rows={7}
-                    onChange={(value) =>
-                      changeSelected("content", "description", value)
-                    }
-                  />
-                </Group>
-
-                <Group title="Buttons">
-                  <Field
-                    label="Primary button"
-                    value={selectedEdit.content.primaryButton}
-                    onChange={(value) =>
-                      changeSelected("content", "primaryButton", value)
-                    }
-                  />
-                  <Field
-                    label="Secondary button"
-                    value={selectedEdit.content.secondaryButton}
-                    onChange={(value) =>
-                      changeSelected("content", "secondaryButton", value)
-                    }
-                  />
-                </Group>
-              </>
-            )}
-
-            {selected && tab === "style" && (
-              <>
-                <Toggle
-                  label="Enable style overrides"
-                  note="Off preserves every current color and style."
-                  checked={selectedEdit.style.enabled}
-                  onChange={(value) =>
-                    changeSelected("style", "enabled", value)
+            <div className="pb-tabs">
+              {[
+                ["content", Type, "Content"],
+                ["style", Paintbrush, "Style"],
+                ["advanced", Settings2, "Advanced"],
+              ].map(([value, Icon, label]) => (
+                <button
+                  type="button"
+                  key={value}
+                  className={
+                    tab === value ? "is-active" : ""
                   }
-                />
-                <Group title="Section colors">
-                  <Color
+                  onClick={() => setTab(value)}
+                  disabled={!selectedTarget}
+                >
+                  <Icon size={14} />
+                  {label}
+                </button>
+              ))}
+            </div>
+
+            <div className="pb-controls">
+              {!selectedTarget && (
+                <div className="pb-empty">
+                  Select a section from the list or click
+                  directly in the live preview.
+                </div>
+              )}
+
+              {selectedTarget && tab === "content" && (
+                <>
+                  {selectedTarget.capabilities.eyebrow && (
+                    <Field
+                      label="Eyebrow / label"
+                      value={selectedEdit.content.eyebrow}
+                      onChange={(value) =>
+                        updateSelected(
+                          "content",
+                          "eyebrow",
+                          value
+                        )
+                      }
+                    />
+                  )}
+
+                  {selectedTarget.capabilities.heading && (
+                    <Area
+                      label="Heading"
+                      value={selectedEdit.content.heading}
+                      rows={3}
+                      onChange={(value) =>
+                        updateSelected(
+                          "content",
+                          "heading",
+                          value
+                        )
+                      }
+                    />
+                  )}
+
+                  {selectedTarget.capabilities.description && (
+                    <Area
+                      label="Description"
+                      value={
+                        selectedEdit.content.description
+                      }
+                      rows={5}
+                      onChange={(value) =>
+                        updateSelected(
+                          "content",
+                          "description",
+                          value
+                        )
+                      }
+                    />
+                  )}
+
+                  {selectedTarget.capabilities.primaryButton && (
+                    <>
+                      <Field
+                        label="Primary button text"
+                        value={
+                          selectedEdit.content.primaryButton
+                        }
+                        onChange={(value) =>
+                          updateSelected(
+                            "content",
+                            "primaryButton",
+                            value
+                          )
+                        }
+                      />
+                      {selectedTarget.capabilities
+                        .primaryButtonUrl && (
+                        <Field
+                          label="Primary button link"
+                          value={
+                            selectedEdit.content
+                              .primaryButtonUrl
+                          }
+                          placeholder="/contact or https://..."
+                          onChange={(value) =>
+                            updateSelected(
+                              "content",
+                              "primaryButtonUrl",
+                              value
+                            )
+                          }
+                        />
+                      )}
+                    </>
+                  )}
+
+                  {selectedTarget.capabilities.secondaryButton && (
+                    <>
+                      <Field
+                        label="Secondary button text"
+                        value={
+                          selectedEdit.content.secondaryButton
+                        }
+                        onChange={(value) =>
+                          updateSelected(
+                            "content",
+                            "secondaryButton",
+                            value
+                          )
+                        }
+                      />
+                      {selectedTarget.capabilities
+                        .secondaryButtonUrl && (
+                        <Field
+                          label="Secondary button link"
+                          value={
+                            selectedEdit.content
+                              .secondaryButtonUrl
+                          }
+                          placeholder="/projects or https://..."
+                          onChange={(value) =>
+                            updateSelected(
+                              "content",
+                              "secondaryButtonUrl",
+                              value
+                            )
+                          }
+                        />
+                      )}
+                    </>
+                  )}
+
+                  {selectedTarget.capabilities.image && (
+                    <div className="pb-image-field">
+                      <span>Image</span>
+
+                      <button
+                        type="button"
+                        className="pb-image-preview"
+                        onClick={() => setMediaOpen(true)}
+                      >
+                        {imageUrl ? (
+                          <img src={imageUrl} alt="" />
+                        ) : (
+                          <ImageIcon size={24} />
+                        )}
+                        <strong>
+                          Choose from Media Library
+                        </strong>
+                      </button>
+
+                      <Field
+                        label="Alt text"
+                        value={selectedEdit.content.imageAlt}
+                        onChange={(value) =>
+                          updateSelected(
+                            "content",
+                            "imageAlt",
+                            value
+                          )
+                        }
+                      />
+                    </div>
+                  )}
+                </>
+              )}
+
+              {selectedTarget && tab === "style" && (
+                <>
+                  <Toggle
+                    label="Enable custom section styles"
+                    note="Keep this off to preserve the original website design."
+                    checked={selectedEdit.style.enabled}
+                    onChange={(value) =>
+                      updateSelected(
+                        "style",
+                        "enabled",
+                        value
+                      )
+                    }
+                  />
+
+                  <ColorField
                     label="Background"
                     value={selectedEdit.style.background}
                     disabled={!selectedEdit.style.enabled}
                     onChange={(value) =>
-                      changeSelected("style", "background", value)
+                      updateSelected(
+                        "style",
+                        "background",
+                        value
+                      )
                     }
                   />
-                  <Color
-                    label="Text"
+
+                  <ColorField
+                    label="Text color"
                     value={selectedEdit.style.text}
                     disabled={!selectedEdit.style.enabled}
                     onChange={(value) =>
-                      changeSelected("style", "text", value)
+                      updateSelected(
+                        "style",
+                        "text",
+                        value
+                      )
                     }
                   />
-                  <Color
-                    label="Heading"
+
+                  <ColorField
+                    label="Heading color"
                     value={selectedEdit.style.heading}
                     disabled={!selectedEdit.style.enabled}
                     onChange={(value) =>
-                      changeSelected("style", "heading", value)
+                      updateSelected(
+                        "style",
+                        "heading",
+                        value
+                      )
                     }
                   />
-                  <label className="elementor-builder__field">
-                    <span>Alignment</span>
+
+                  <label className="pb-field">
+                    <span>Text alignment</span>
                     <select
                       value={selectedEdit.style.align}
                       disabled={!selectedEdit.style.enabled}
                       onChange={(event) =>
-                        changeSelected("style", "align", event.target.value)
+                        updateSelected(
+                          "style",
+                          "align",
+                          event.target.value
+                        )
                       }
                     >
-                      <option value="">Keep current</option>
+                      <option value="">
+                        Keep current
+                      </option>
                       <option value="left">Left</option>
-                      <option value="center">Center</option>
+                      <option value="center">
+                        Center
+                      </option>
                       <option value="right">Right</option>
                     </select>
                   </label>
-                </Group>
-                <p className="elementor-builder__safe">
-                  Nothing changes until this switch is enabled.
-                </p>
-              </>
-            )}
+                </>
+              )}
 
-            {selected && tab === "advanced" && (
-              <>
-                <Toggle
-                  label="Enable advanced overrides"
-                  note="Off preserves current spacing and visibility."
-                  checked={selectedEdit.advanced.enabled}
-                  onChange={(value) =>
-                    changeSelected("advanced", "enabled", value)
-                  }
-                />
-                <Group title="Desktop spacing">
-                  <NumberField
-                    label="Top padding"
-                    value={selectedEdit.advanced.desktopTop}
-                    disabled={!selectedEdit.advanced.enabled}
+              {selectedTarget && tab === "advanced" && (
+                <>
+                  <Toggle
+                    label="Enable advanced controls"
+                    note="Responsive spacing and visibility controls."
+                    checked={selectedEdit.advanced.enabled}
                     onChange={(value) =>
-                      changeSelected("advanced", "desktopTop", value)
+                      updateSelected(
+                        "advanced",
+                        "enabled",
+                        value
+                      )
                     }
                   />
+
                   <NumberField
-                    label="Bottom padding"
-                    value={selectedEdit.advanced.desktopBottom}
+                    label="Desktop top padding"
+                    value={
+                      selectedEdit.advanced.desktopTop
+                    }
                     disabled={!selectedEdit.advanced.enabled}
                     onChange={(value) =>
-                      changeSelected("advanced", "desktopBottom", value)
+                      updateSelected(
+                        "advanced",
+                        "desktopTop",
+                        value
+                      )
                     }
                   />
-                </Group>
-                <Group title="Mobile spacing">
+
                   <NumberField
-                    label="Top padding"
+                    label="Desktop bottom padding"
+                    value={
+                      selectedEdit.advanced.desktopBottom
+                    }
+                    disabled={!selectedEdit.advanced.enabled}
+                    onChange={(value) =>
+                      updateSelected(
+                        "advanced",
+                        "desktopBottom",
+                        value
+                      )
+                    }
+                  />
+
+                  <NumberField
+                    label="Mobile top padding"
                     value={selectedEdit.advanced.mobileTop}
                     disabled={!selectedEdit.advanced.enabled}
                     onChange={(value) =>
-                      changeSelected("advanced", "mobileTop", value)
+                      updateSelected(
+                        "advanced",
+                        "mobileTop",
+                        value
+                      )
                     }
                   />
+
                   <NumberField
-                    label="Bottom padding"
-                    value={selectedEdit.advanced.mobileBottom}
+                    label="Mobile bottom padding"
+                    value={
+                      selectedEdit.advanced.mobileBottom
+                    }
                     disabled={!selectedEdit.advanced.enabled}
                     onChange={(value) =>
-                      changeSelected("advanced", "mobileBottom", value)
+                      updateSelected(
+                        "advanced",
+                        "mobileBottom",
+                        value
+                      )
                     }
                   />
-                </Group>
-                <Group title="Responsive visibility">
+
                   {[
                     ["hideDesktop", "Hide on desktop"],
                     ["hideTablet", "Hide on tablet"],
@@ -907,28 +1199,30 @@ export default function PageBuilder({ page, onBack }) {
                     <Toggle
                       key={field}
                       label={label}
-                      checked={selectedEdit.advanced[field]}
-                      disabled={!selectedEdit.advanced.enabled}
+                      checked={
+                        selectedEdit.advanced[field]
+                      }
+                      disabled={
+                        !selectedEdit.advanced.enabled
+                      }
                       onChange={(value) =>
-                        changeSelected("advanced", field, value)
+                        updateSelected(
+                          "advanced",
+                          field,
+                          value
+                        )
                       }
                     />
                   ))}
-                </Group>
-              </>
-            )}
+                </>
+              )}
+            </div>
           </div>
-
-          <Navigator
-            sections={sections}
-            selectedKey={selectedKey}
-            onSelect={selectSection}
-          />
         </aside>
 
-        <main className="elementor-builder__canvas">
-          <header className="elementor-builder__canvas-toolbar">
-            <div className="elementor-builder__devices">
+        <main className="pb-canvas">
+          <header className="pb-canvas__toolbar">
+            <div className="pb-devices">
               {[
                 ["desktop", Monitor, "Desktop"],
                 ["tablet", Tablet, "Tablet"],
@@ -937,89 +1231,140 @@ export default function PageBuilder({ page, onBack }) {
                 <button
                   type="button"
                   key={value}
-                  className={device === value ? "is-active" : ""}
+                  className={
+                    device === value ? "is-active" : ""
+                  }
                   onClick={() => setDevice(value)}
                 >
-                  <Icon size={14} /> {label}
+                  <Icon size={14} />
+                  {label}
                 </button>
               ))}
             </div>
 
-            <span className={ready ? "is-ready" : ""}>
-              {ready ? "Real page ready" : "Loading real page"}
-            </span>
+            <div className="pb-preview-status">
+              <span
+                className={
+                  ready ? "is-ready" : "is-loading"
+                }
+              >
+                <i />
+                {ready
+                  ? "Live preview ready"
+                  : "Preparing preview"}
+              </span>
 
-            <button
-              type="button"
-              className="elementor-builder__reload"
-              onClick={() => {
-                setReady(false);
-                iframeRef.current?.contentWindow?.location.reload();
-              }}
-            >
-              <RefreshCcw size={14} /> Reload
-            </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setReady(false);
+                  iframeRef.current?.contentWindow?.location.reload();
+                }}
+              >
+                <RefreshCcw size={14} />
+                Reload
+              </button>
+            </div>
           </header>
 
-          <div className="elementor-builder__stage">
+          <div className="pb-stage">
             <div
-              className={`elementor-builder__frame is-${device}`}
+              className={`pb-frame is-${device}`}
               style={{ width: DEVICE_WIDTH[device] }}
             >
-              <iframe
-                ref={iframeRef}
-                src={`${page.slug}?cmsPreview=1`}
-                title={`${page.title} visual editor`}
-                onLoad={preparePreview}
-              />
+              {isLoading ? (
+                <div className="pb-frame__loading">
+                  Loading page content…
+                </div>
+              ) : (
+                <iframe
+                  ref={iframeRef}
+                  src={`${page.slug}?cmsPreview=1&cmsBuilder=1`}
+                  title={`${page.title} visual editor`}
+                  onLoad={preparePreview}
+                />
+              )}
             </div>
           </div>
         </main>
       </div>
+
+      <MediaPickerModal
+        open={mediaOpen}
+        currentUrl={imageUrl}
+        title="Choose page image"
+        description="Select an image already stored in your Media Library."
+        onClose={() => setMediaOpen(false)}
+        onSelect={(item) => {
+          updateSelected(
+            "content",
+            "imageUrl",
+            item.url
+          );
+
+          if (!selectedEdit.content.imageAlt) {
+            updateSelected(
+              "content",
+              "imageAlt",
+              item.alt || item.title || ""
+            );
+          }
+        }}
+      />
     </section>
   );
 }
 
-function Group({ title, children }) {
-  const [open, setOpen] = useState(true);
+function Field({
+  label,
+  value = "",
+  placeholder = "",
+  onChange,
+}) {
   return (
-    <section className="elementor-builder__group">
-      <button type="button" onClick={() => setOpen((value) => !value)}>
-        <strong>{title}</strong>
-        {open ? <ChevronDown size={15} /> : <ChevronRight size={15} />}
-      </button>
-      {open && <div>{children}</div>}
-    </section>
-  );
-}
-
-function Field({ label, value, onChange }) {
-  return (
-    <label className="elementor-builder__field">
+    <label className="pb-field">
       <span>{label}</span>
-      <input value={value} onChange={(event) => onChange(event.target.value)} />
-    </label>
-  );
-}
-
-function Area({ label, value, rows, onChange }) {
-  return (
-    <label className="elementor-builder__field">
-      <span>{label}</span>
-      <textarea
-        rows={rows}
+      <input
         value={value}
-        onChange={(event) => onChange(event.target.value)}
+        placeholder={placeholder}
+        onChange={(event) =>
+          onChange(event.target.value)
+        }
       />
     </label>
   );
 }
 
-function NumberField({ label, value, disabled, onChange }) {
+function Area({
+  label,
+  value = "",
+  rows = 4,
+  onChange,
+}) {
   return (
-    <label className="elementor-builder__field">
+    <label className="pb-field">
       <span>{label}</span>
-      <div className="elementor-builder__number">
+      <textarea
+        value={value}
+        rows={rows}
+        onChange={(event) =>
+          onChange(event.target.value)
+        }
+      />
+    </label>
+  );
+}
+
+function NumberField({
+  label,
+  value = "",
+  disabled = false,
+  onChange,
+}) {
+  return (
+    <label className="pb-field">
+      <span>{label}</span>
+      <div className="pb-number">
         <input
           type="number"
           min="0"
@@ -1027,7 +1372,9 @@ function NumberField({ label, value, disabled, onChange }) {
           value={value}
           disabled={disabled}
           placeholder="Keep current"
-          onChange={(event) => onChange(event.target.value)}
+          onChange={(event) =>
+            onChange(event.target.value)
+          }
         />
         <small>px</small>
       </div>
@@ -1035,71 +1382,72 @@ function NumberField({ label, value, disabled, onChange }) {
   );
 }
 
-function Color({ label, value, disabled, onChange }) {
-  const picker = /^#[0-9a-f]{6}$/i.test(value) ? value : "#000000";
+function Toggle({
+  label,
+  note = "",
+  checked = false,
+  disabled = false,
+  onChange,
+}) {
   return (
-    <label className="elementor-builder__field">
-      <span>{label}</span>
-      <div className="elementor-builder__color">
-        <input
-          type="color"
-          value={picker}
-          disabled={disabled}
-          onChange={(event) => onChange(event.target.value.toUpperCase())}
-        />
-        <input
-          value={value}
-          disabled={disabled}
-          placeholder="Keep current"
-          onChange={(event) => onChange(event.target.value.toUpperCase())}
-        />
-      </div>
-    </label>
-  );
-}
-
-function Toggle({ label, note, checked, disabled, onChange }) {
-  return (
-    <label className={`elementor-builder__toggle ${disabled ? "is-disabled" : ""}`}>
+    <label
+      className={`pb-toggle ${
+        disabled ? "is-disabled" : ""
+      }`}
+    >
       <span>
         <strong>{label}</strong>
         {note && <small>{note}</small>}
       </span>
+
       <input
         type="checkbox"
         checked={Boolean(checked)}
         disabled={disabled}
-        onChange={(event) => onChange(event.target.checked)}
+        onChange={(event) =>
+          onChange(event.target.checked)
+        }
       />
     </label>
   );
 }
 
-function Navigator({ sections, selectedKey, onSelect }) {
-  const [open, setOpen] = useState(true);
+function ColorField({
+  label,
+  value = "",
+  disabled = false,
+  onChange,
+}) {
+  const validColor =
+    /^#[0-9a-f]{6}$/i.test(value)
+      ? value
+      : "#000000";
+
   return (
-    <section className="elementor-builder__navigator">
-      <button type="button" onClick={() => setOpen((value) => !value)}>
-        <span>
-          <Layers3 size={15} /> Navigator
-        </span>
-        {open ? <ChevronDown size={15} /> : <ChevronRight size={15} />}
-      </button>
-      {open && (
-        <div>
-          {sections.map((section, index) => (
-            <button
-              type="button"
-              key={section.key}
-              className={selectedKey === section.key ? "is-active" : ""}
-              onClick={() => onSelect(section.key)}
-            >
-              <span>{index + 1}</span>
-              <strong>{section.label}</strong>
-            </button>
-          ))}
-        </div>
-      )}
-    </section>
+    <label className="pb-field">
+      <span>{label}</span>
+      <div className="pb-color">
+        <input
+          type="color"
+          value={validColor}
+          disabled={disabled}
+          onChange={(event) =>
+            onChange(
+              event.target.value.toUpperCase()
+            )
+          }
+        />
+        <input
+          value={value}
+          disabled={disabled}
+          placeholder="Keep current"
+          onChange={(event) =>
+            onChange(
+              event.target.value.toUpperCase()
+            )
+          }
+        />
+      </div>
+    </label>
   );
 }

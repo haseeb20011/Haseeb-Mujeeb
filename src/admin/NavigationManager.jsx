@@ -26,14 +26,49 @@ import "./NavigationManager.css";
 
 const STORAGE_KEY = "portfolio-cms-navigation";
 
-const PAGE_OPTIONS = [
-  { label: "Home", url: "/" },
-  { label: "About", url: "/about" },
-  { label: "Services", url: "/services" },
-  { label: "Projects", url: "/projects" },
-  { label: "Process", url: "/process" },
-  { label: "Contact", url: "/contact" },
+const API_URL =
+  import.meta.env.VITE_API_URL ||
+  (import.meta.env.PROD ? "" : "http://localhost:5000");
+
+const fetchJson = async (path, options = {}) => {
+  const response = await fetch(`${API_URL}${path}`, {
+    credentials: "include",
+    headers: {
+      Accept: "application/json",
+      ...(options.body
+        ? { "Content-Type": "application/json" }
+        : {}),
+      ...(options.headers || {}),
+    },
+    ...options,
+  });
+
+  const data = await response.json().catch(() => ({}));
+
+  if (!response.ok || data.success === false) {
+    throw new Error(
+      data.message ||
+        "The navigation request could not be completed."
+    );
+  }
+
+  return data;
+};
+
+const FALLBACK_PAGE_OPTIONS = [
+  { key: "home", label: "Home", url: "/" },
+  { key: "about", label: "About", url: "/about" },
+  { key: "services", label: "Services", url: "/services" },
+  { key: "projects", label: "Projects", url: "/projects" },
+  { key: "process", label: "Process", url: "/process", virtual: true },
+  { key: "contact", label: "Contact", url: "/contact" },
 ];
+
+const toBackendNavigationType = (item) => {
+  if (item.url === "/process") return "section";
+  if (/^https?:\/\//i.test(item.url)) return "external";
+  return "page";
+};
 
 const DEFAULT_NAVIGATION = {
   menus: [
@@ -259,10 +294,115 @@ export default function NavigationManager() {
   const [editingId, setEditingId] = useState(null);
   const [itemForm, setItemForm] = useState(EMPTY_ITEM);
   const [notice, setNotice] = useState("");
+  const [pageOptions, setPageOptions] = useState(
+    FALLBACK_PAGE_OPTIONS
+  );
+  const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
     saveNavigation(navigation);
   }, [navigation]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadCmsNavigation = async () => {
+      try {
+        const data = await fetchJson("/api/site-config");
+        const pages = Array.isArray(data.config?.pages)
+          ? data.config.pages
+          : [];
+        const storedNavigation = Array.isArray(
+          data.config?.navigation
+        )
+          ? data.config.navigation
+          : [];
+
+        const publishedPages = pages
+          .filter((page) => page.status === "published")
+          .map((page) => ({
+            key: String(page.key || page.id || page.slug),
+            label: page.title || "Untitled Page",
+            url: page.slug || "/",
+          }));
+
+        const processOption = FALLBACK_PAGE_OPTIONS.find(
+          (page) => page.key === "process"
+        );
+
+        const nextPageOptions = [
+          ...publishedPages,
+          ...(processOption &&
+          !publishedPages.some(
+            (page) => page.url === processOption.url
+          )
+            ? [processOption]
+            : []),
+        ];
+
+        if (cancelled) return;
+
+        setPageOptions(
+          nextPageOptions.length > 0
+            ? nextPageOptions
+            : FALLBACK_PAGE_OPTIONS
+        );
+
+        if (storedNavigation.length > 0) {
+          const headerItems = storedNavigation
+            .slice()
+            .sort(
+              (a, b) =>
+                Number(a.order || 0) -
+                Number(b.order || 0)
+            )
+            .map((item, index) => ({
+              id:
+                item.id ||
+                `header-item-${index + 1}`,
+              label: item.label || "Menu Item",
+              url: item.url || "/",
+              type:
+                item.type === "external"
+                  ? "custom"
+                  : "page",
+              visible: item.enabled !== false,
+              newTab: Boolean(
+                item.openInNewTab
+              ),
+            }));
+
+          setNavigation((current) => ({
+            ...current,
+            menus: current.menus.map((menuItem) =>
+              menuItem.id === "header"
+                ? {
+                    ...menuItem,
+                    items: headerItems,
+                  }
+                : menuItem
+            ),
+          }));
+        }
+      } catch (error) {
+        console.error(
+          "Unable to load navigation from the CMS:",
+          error
+        );
+        if (!cancelled) {
+          showNotice(
+            "Could not load live navigation. Existing local menu shown."
+          );
+        }
+      }
+    };
+
+    loadCmsNavigation();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const activeMenu =
     navigation.menus.find(
@@ -314,12 +454,16 @@ export default function NavigationManager() {
 
   const openCreateModal = () => {
     setEditingId(null);
-    setItemForm(EMPTY_ITEM);
+    setItemForm({
+      ...EMPTY_ITEM,
+      pageUrl: pageOptions[0]?.url || "/",
+      label: pageOptions[0]?.label || "",
+    });
     setModalOpen(true);
   };
 
   const openEditModal = (item) => {
-    const pageMatch = PAGE_OPTIONS.some(
+    const pageMatch = pageOptions.some(
       (page) => page.url === item.url
     );
 
@@ -486,9 +630,53 @@ export default function NavigationManager() {
     showNotice("Navigation restored to defaults.");
   };
 
-  const saveChanges = () => {
-    saveNavigation(navigation);
-    showNotice("Navigation changes saved.");
+  const saveChanges = async () => {
+    const headerMenu =
+      navigation.menus.find(
+        (menuItem) => menuItem.id === "header"
+      ) || navigation.menus[0];
+
+    const payload = headerMenu.items.map(
+      (item, index) => ({
+        id:
+          item.id ||
+          `header-item-${index + 1}`,
+        label: item.label,
+        url: item.url,
+        type: toBackendNavigationType(item),
+        enabled: item.visible !== false,
+        openInNewTab: Boolean(item.newTab),
+        order: index,
+      })
+    );
+
+    try {
+      setIsSaving(true);
+
+      await fetchJson("/api/site-config/navigation", {
+        method: "PUT",
+        body: JSON.stringify({
+          navigation: payload,
+        }),
+      });
+
+      saveNavigation(navigation);
+      showNotice(
+        "Header navigation saved and published to the website."
+      );
+    } catch (error) {
+      console.error(
+        "Unable to save navigation:",
+        error
+      );
+      showNotice(
+        error instanceof Error
+          ? error.message
+          : "Unable to save navigation."
+      );
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const updateCta = (updates) => {
@@ -532,9 +720,10 @@ export default function NavigationManager() {
             type="button"
             className="cms-navigation__save"
             onClick={saveChanges}
+            disabled={isSaving}
           >
             <Save size={16} />
-            Save changes
+            {isSaving ? "Saving..." : "Save changes"}
           </button>
         </div>
       </header>
@@ -560,9 +749,9 @@ export default function NavigationManager() {
           </strong>
 
           <p>
-            Changes are saved in the browser during
-            development and will connect to the public
-            site later.
+            Published pages are available automatically.
+            Save Header Navigation to publish the selected
+            links to the public website.
           </p>
         </article>
 
@@ -1097,15 +1286,28 @@ export default function NavigationManager() {
 
                   <select
                     value={itemForm.pageUrl}
-                    onChange={(event) =>
+                    onChange={(event) => {
+                      const selectedUrl =
+                        event.target.value;
+                      const selectedPage =
+                        pageOptions.find(
+                          (page) =>
+                            page.url === selectedUrl
+                        );
+
                       setItemForm((current) => ({
                         ...current,
-                        pageUrl:
-                          event.target.value,
-                      }))
-                    }
+                        pageUrl: selectedUrl,
+                        label:
+                          !editingId ||
+                          !current.label.trim()
+                            ? selectedPage?.label ||
+                              current.label
+                            : current.label,
+                      }));
+                    }}
                   >
-                    {PAGE_OPTIONS.map((page) => (
+                    {pageOptions.map((page) => (
                       <option
                         key={page.url}
                         value={page.url}

@@ -21,6 +21,8 @@ import "./MediaPickerModal.css";
 export default function MediaPickerModal({
   open,
   currentUrl = "",
+  title = "Choose project image",
+  description = "Select an existing image already stored in your Media Library.",
   onClose,
   onSelect,
 }) {
@@ -117,13 +119,11 @@ export default function MediaPickerModal({
             </span>
 
             <h2 id="media-picker-title">
-              Choose project image
+              {title}
             </h2>
 
             <p>
-              Select an existing image
-              already stored in your
-              Media Library.
+              {description}
             </p>
           </div>
 

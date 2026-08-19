@@ -83,6 +83,17 @@ const normalizeStoredPage = (page, index = 0) => {
     content.builderPublished ||
     {};
 
+  const builderEntries = Object.values(builderSections).filter(
+    (entry) => entry && typeof entry === "object"
+  );
+  const explicitSectionCount = builderEntries.filter(
+    (entry) => entry.meta?.kind === "section"
+  ).length;
+  const sectionCount = explicitSectionCount ||
+    (builderEntries.some((entry) => entry.meta?.kind)
+      ? 0
+      : Object.keys(builderSections).length);
+
   return {
     id: String(page?.key || page?.id || ""),
     key: String(page?.key || page?.id || ""),
@@ -90,7 +101,7 @@ const normalizeStoredPage = (page, index = 0) => {
     slug: page?.slug || "/",
     status:
       page?.status === "draft" ? "draft" : "published",
-    sections: Object.keys(builderSections).length,
+    sections: sectionCount,
     template: page?.template || "Standard Page",
     updatedAt: formatPageDate(page?.updatedAt),
     updatedAtRaw: page?.updatedAt || null,

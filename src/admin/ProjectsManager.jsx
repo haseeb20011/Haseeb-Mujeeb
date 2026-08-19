@@ -595,22 +595,11 @@ const loadProjectsFromMongoDb = async () => {
   setLoadError("");
 
   try {
-    const migrationProjects =
-      readMigrationProjects();
+    // The backend performs the one-time bootstrap when the Project
+    // collection is empty. Normal admin visits only read MongoDB.
+    const data = await fetchJson("/api/projects");
 
-    const data = await fetchJson(
-      "/api/projects/sync-defaults",
-      {
-        method: "POST",
-        body: JSON.stringify({
-          projects: migrationProjects,
-        }),
-      }
-    );
-
-    const nextProjects = Array.isArray(
-      data.projects
-    )
+    const nextProjects = Array.isArray(data.projects)
       ? data.projects
       : [];
 

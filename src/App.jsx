@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState, useCallback } from "react";
+import { applyCmsStateToDocument } from "./cmsRuntime.js";
 import {
   ArrowRight,
   Layers,
@@ -120,6 +121,7 @@ const DEFAULT_PROJECTS = [
     filters: ["WordPress", "Live"],
     projectType: "News & Media",
     title: "Holiday Weekly",
+    featured: true,
     domain: "holidayweekly.pk",
     liveUrl: "http://holidayweekly.pk/",
     status: "Live",
@@ -150,6 +152,7 @@ const DEFAULT_PROJECTS = [
     filters: ["WordPress", "Live"],
     projectType: "Clean Energy · Lead Generation",
     title: "Julien's Solar Solutions",
+    featured: true,
     domain: "juliensolarsolutions.com",
     liveUrl: "https://juliensolarsolutions.com/",
     status: "Live",
@@ -180,6 +183,7 @@ const DEFAULT_PROJECTS = [
     filters: ["WordPress", "Live"],
     projectType: "Hospitality · Booking",
     title: "Inspire Salon",
+    featured: true,
     domain: "inspiresalonstl.com",
     liveUrl: "http://inspiresalonstl.com/",
     status: "Live",
@@ -210,6 +214,7 @@ const DEFAULT_PROJECTS = [
     filters: ["WordPress", "Live"],
     projectType: "Financial Services",
     title: "Straight Ahead Credit & Funding",
+    featured: true,
     domain: "straightaheadcreditandfunding.com",
     liveUrl: "http://straightaheadcreditandfunding.com/",
     status: "Live",
@@ -1098,6 +1103,40 @@ function normalizePathname(pathname = "/") {
   return normalized || "/";
 }
 
+function getDefaultPublicNavigation() {
+  return NAV_LINKS.map((item) => ({
+    id: item.id,
+    label: item.label,
+    url: ROUTE_PATHS[item.id] || "/",
+    type: item.type,
+    openInNewTab: false,
+  }));
+}
+
+function normalizePublicNavigation(items) {
+  if (!Array.isArray(items) || items.length === 0) {
+    return getDefaultPublicNavigation();
+  }
+
+  return items.map((item, index) => ({
+    id:
+      String(
+        item.id ||
+          item.label ||
+          `nav-${index + 1}`
+      ),
+    label: item.label || "Menu Item",
+    url: item.url || "/",
+    type:
+      item.type === "external"
+        ? "external"
+        : item.type === "section"
+          ? "section"
+          : "page",
+    openInNewTab: Boolean(item.openInNewTab),
+  }));
+}
+
 function getRouteFromPath(cmsPages = null) {
   if (typeof window === "undefined") {
     return {
@@ -1297,6 +1336,9 @@ export default function App() {
   const [selectedProject, setSelectedProject] = useState(null);
   const [projects, setProjects] = useState(DEFAULT_PROJECTS);
   const [cmsPages, setCmsPages] = useState([]);
+  const [siteNavigation, setSiteNavigation] = useState(
+    getDefaultPublicNavigation
+  );
   const [cmsConfigLoaded, setCmsConfigLoaded] =
     useState(false);
   const [dynamicPage, setDynamicPage] =
@@ -1307,6 +1349,12 @@ export default function App() {
     new URLSearchParams(
       window.location.search
     ).get("cmsPreview") === "1";
+
+  const cmsBuilder =
+    typeof window !== "undefined" &&
+    new URLSearchParams(
+      window.location.search
+    ).get("cmsBuilder") === "1";
 
   const [form, setForm] = useState({
     name: "",
@@ -1352,6 +1400,11 @@ export default function App() {
 
         if (!cancelled) {
           setCmsPages(nextPages);
+          setSiteNavigation(
+            normalizePublicNavigation(
+              data.config?.navigation
+            )
+          );
 
           const route =
             getRouteFromPath(nextPages);
@@ -1430,6 +1483,118 @@ export default function App() {
       cancelled = true;
     };
   }, []);
+
+  useEffect(() => {
+    // Inside the visual Page Builder, the parent editor owns the preview DOM.
+    // Do not let the website runtime re-apply the server draft through its
+    // MutationObserver, otherwise it can overwrite live unsaved edits.
+    if (cmsBuilder) return undefined;
+
+    let cancelled = false;
+    let observer = null;
+    let frame = null;
+
+    const applyCurrentCmsPageEdits = () => {
+      if (cancelled) return;
+
+      const configKey =
+        page === "cms"
+          ? dynamicPage?.key
+          : page === "projects"
+            ? "projects"
+            : page === "home"
+              ? "home"
+              : page;
+
+      const configPage = cmsPages.find(
+        (item) =>
+          String(item.key) === String(configKey)
+      );
+
+      const content =
+        configPage?.content &&
+        typeof configPage.content === "object"
+          ? configPage.content
+          : {};
+
+      const state = cmsPreview
+        ? content.builderDraft ||
+          content.builderPublished ||
+          {}
+        : content.builderPublished || {};
+
+      applyCmsStateToDocument(
+        document,
+        state,
+        window.innerWidth
+      );
+    };
+
+    const scheduleApply = () => {
+      if (frame) {
+        window.cancelAnimationFrame(frame);
+      }
+
+      frame = window.requestAnimationFrame(
+        applyCurrentCmsPageEdits
+      );
+    };
+
+    const firstTimer = window.setTimeout(
+      applyCurrentCmsPageEdits,
+      0
+    );
+
+    const secondTimer = window.setTimeout(
+      applyCurrentCmsPageEdits,
+      140
+    );
+
+    const main = document.getElementById(
+      "main-content"
+    );
+
+    if (main) {
+      observer = new MutationObserver(
+        scheduleApply
+      );
+
+      observer.observe(main, {
+        childList: true,
+        subtree: true,
+      });
+    }
+
+    window.addEventListener(
+      "resize",
+      scheduleApply
+    );
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(firstTimer);
+      window.clearTimeout(secondTimer);
+
+      if (frame) {
+        window.cancelAnimationFrame(frame);
+      }
+
+      observer?.disconnect();
+
+      window.removeEventListener(
+        "resize",
+        scheduleApply
+      );
+    };
+  }, [
+    page,
+    routeKey,
+    dynamicPage,
+    cmsPages,
+    cmsPreview,
+    cmsBuilder,
+    projects,
+  ]);
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 30);
@@ -1620,6 +1785,73 @@ export default function App() {
       }
     },
     [page]
+  );
+
+  const navigateNavigationItem = useCallback(
+    (item) => {
+      if (!item) return;
+
+      const targetUrl = String(item.url || "/").trim();
+
+      if (
+        item.type === "external" ||
+        /^https?:\/\//i.test(targetUrl)
+      ) {
+        if (item.openInNewTab) {
+          window.open(
+            targetUrl,
+            "_blank",
+            "noopener,noreferrer"
+          );
+        } else {
+          window.location.assign(targetUrl);
+        }
+        return;
+      }
+
+      if (item.openInNewTab) {
+        window.open(
+          targetUrl,
+          "_blank",
+          "noopener,noreferrer"
+        );
+        return;
+      }
+
+      setMenuOpen(false);
+      setSelectedProject(null);
+
+      if (
+        normalizePathname(window.location.pathname) !==
+          normalizePathname(targetUrl) ||
+        window.location.hash
+      ) {
+        window.history.pushState(
+          { route: item.id },
+          "",
+          targetUrl
+        );
+      }
+
+      const route = getRouteFromPath(cmsPages);
+
+      setPage(route.page);
+      setPendingScroll(route.section);
+      setActiveSection(
+        route.section ||
+          (route.page === "home" ? "home" : "")
+      );
+      setRouteKey(route.routeKey);
+      setDynamicPage(route.cmsPage || null);
+
+      if (route.page !== "home" || !route.section) {
+        window.scrollTo({
+          top: 0,
+          behavior: "auto",
+        });
+      }
+    },
+    [cmsPages]
   );
 
   const goToContact = useCallback((project) => {
@@ -2692,14 +2924,25 @@ export default function App() {
             <span className="logo__text">Haseeb<span>.dev</span></span>
           </button>
           <div className="nav-links">
-            {NAV_LINKS.map((item) => {
-              const isActive = item.type === "page" ? page === item.id : page === "home" && activeSection === item.id;
+            {siteNavigation.map((item) => {
+              const isInternal =
+                item.type !== "external" &&
+                !/^https?:\/\//i.test(item.url || "");
+              const isActive =
+                isInternal &&
+                normalizePathname(item.url || "/") ===
+                  normalizePathname(
+                    window.location.pathname
+                  );
+
               return (
                 <button
                   key={item.id}
                   className={isActive ? "active" : ""}
                   aria-current={isActive ? "page" : undefined}
-                  onClick={() => navigateTo(item.id, item.type)}
+                  onClick={() =>
+                    navigateNavigationItem(item)
+                  }
                 >
                   {item.label}
                 </button>
@@ -2726,8 +2969,15 @@ export default function App() {
         <button type="button" className="mmenu-close" onClick={() => setMenuOpen(false)} aria-label="Close menu">
           <X size={22} />
         </button>
-        {NAV_LINKS.map((item) => (
-          <button type="button" key={item.id} className="mlink" onClick={() => navigateTo(item.id, item.type)}>
+        {siteNavigation.map((item) => (
+          <button
+            type="button"
+            key={item.id}
+            className="mlink"
+            onClick={() =>
+              navigateNavigationItem(item)
+            }
+          >
             {item.label}
           </button>
         ))}

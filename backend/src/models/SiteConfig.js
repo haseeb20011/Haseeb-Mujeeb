@@ -396,14 +396,50 @@ siteConfigSchema.statics.getDefaultConfig = function () {
 
 siteConfigSchema.statics.getMainConfig =
   async function () {
+    const defaults = this.getDefaultConfig();
+
     let config = await this.findOne({
       key: "main",
     });
 
+    // First install: create the complete default CMS configuration.
     if (!config) {
-      config = await this.create(
-        this.getDefaultConfig()
-      );
+      return this.create(defaults);
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | SELF-HEAL CORE WEBSITE PAGES
+    |--------------------------------------------------------------------------
+    | The five core pages are part of the website structure and the admin UI
+    | intentionally prevents them from being permanently deleted. If an older
+    | migration, failed save, or partial CMS update leaves `pages` empty (or
+    | removes one of the core records), restore only the missing records.
+    |
+    | Existing pages are NEVER overwritten, so builder content, draft/publish
+    | status, slugs, templates, and custom pages remain authoritative.
+    */
+    const existingPages = Array.isArray(config.pages)
+      ? config.pages
+      : [];
+
+    const existingKeys = new Set(
+      existingPages
+        .map((page) => String(page?.key || "").trim())
+        .filter(Boolean)
+    );
+
+    const missingCorePages = (defaults.pages || []).filter(
+      (page) => !existingKeys.has(page.key)
+    );
+
+    if (missingCorePages.length > 0) {
+      config.pages = [
+        ...existingPages,
+        ...missingCorePages,
+      ];
+
+      await config.save();
     }
 
     return config;
