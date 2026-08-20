@@ -115,10 +115,7 @@ export default function AdminLogin() {
       </div>
 
       <div
-        ref={shellRef}
         className="admin-login__shell"
-        onPointerMove={handlePointerMove}
-        onPointerLeave={handlePointerLeave}
       >
         <span className="admin-login__shell-spotlight" aria-hidden="true" />
 

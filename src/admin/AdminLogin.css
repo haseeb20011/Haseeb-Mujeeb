@@ -1103,3 +1103,64 @@
     transition-duration: 0.001ms !important;
   }
 }
+
+/* ADMIN LOGIN PERFORMANCE V2 START */
+/* Keep the same design while avoiding expensive continuous GPU work. */
+
+.admin-login__aurora {
+  filter: blur(72px) !important;
+  will-change: auto !important;
+}
+
+.admin-login__aurora--one,
+.admin-login__aurora--two,
+.admin-login__aurora--three,
+.admin-login__grid {
+  animation: none !important;
+}
+
+.admin-login__grain {
+  display: none !important;
+}
+
+.admin-login__shell-spotlight {
+  background: radial-gradient(
+    500px circle at 50% 50%,
+    rgba(187, 94, 246, 0.045),
+    transparent 48%
+  ) !important;
+  transition: none !important;
+}
+
+.admin-login__showcase::after,
+.admin-login__code-card,
+.admin-login__panel-stack {
+  transform: none !important;
+}
+
+.admin-login__panel-orbit {
+  transform: translate(-50%, -50%) !important;
+  animation: none !important;
+  transition: none !important;
+}
+
+.admin-login__panel-orbit > span,
+.admin-login__login-card::before {
+  animation: none !important;
+}
+
+.admin-login__login-card {
+  backdrop-filter: blur(8px) !important;
+  -webkit-backdrop-filter: blur(8px) !important;
+}
+
+/* Keep useful micro-interactions only. */
+.admin-login__submit,
+.admin-login__brand-mark,
+.admin-login__secure-pill > span,
+.admin-login__cursor,
+.admin-login__security-note svg {
+  will-change: auto !important;
+}
+
+/* ADMIN LOGIN PERFORMANCE V2 END */
