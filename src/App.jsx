@@ -1952,12 +1952,31 @@ export default function App() {
         }),
       });
 
-      const result = await response.json().catch(() => ({}));
-      if (!response.ok || result.success === false) {
-        throw new Error(result.message || "Unable to send your message right now.");
-      }
+     const result = await response.json().catch(() => ({}));
+if (!response.ok || result.success === false) {
+  throw new Error(result.message || "Unable to send your message right now.");
+}
 
-      setFormSent(true);
+// ===== Email notification to Gmail (FormSubmit) =====
+fetch("https://formsubmit.co/ajax/haseebmujeeb360@gmail.com", {
+  method: "POST",
+  headers: {
+    "Content-Type": "application/json",
+    Accept: "application/json",
+  },
+  body: JSON.stringify({
+    name: form.name.trim(),
+    email: form.email.trim(),
+    "Project Type": form.projectType || "Not specified",
+    Budget: form.budget || "Not specified",
+    Message: form.message.trim(),
+    _subject: form.subject.trim() || "New portfolio enquiry",
+    _template: "table",
+  }),
+}).catch((err) => console.warn("Email notification failed:", err));
+// =====================================================
+
+setFormSent(true);
       setForm({
         name: "",
         email: "",
